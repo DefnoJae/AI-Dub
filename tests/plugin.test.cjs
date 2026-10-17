@@ -34,7 +34,7 @@ function load(store = {}, fetcher = fetch, videoCore = undefined) {
   context.init();
   rows = render();
   assert.equal(rows.component, 'stack');
-  return { rows, fields, states, events, store, get calls() { return calls; },
+  return { rows, render, fields, states, events, store, get calls() { return calls; },
     save() { events['ai-dub-save'](); }, check() { return events['ai-dub-check'](); } };
 }
 
@@ -188,4 +188,27 @@ test('polished tray uses styled cards and only backed actions', () => {
   }
   assert.ok(buttons.some(b => b.args[0].label === 'Check Connection'));
   assert.ok(buttons.some(b => b.args[0].label === 'Generate Clip'));
+});
+
+test('clip generation remains disabled until a saved connection and clip are available', async () => {
+  function findGenerate(root) {
+    const found = [];
+    function visit(node) {
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (!node || typeof node !== 'object') return;
+      if (node.component === 'button' && node.args[0].label === 'Generate Clip') found.push(node);
+      if (node.component) node.args.forEach(visit);
+    }
+    visit(root);
+    assert.equal(found.length, 1);
+    return found[0].args[0];
+  }
+  const disconnected = load();
+  assert.equal(findGenerate(disconnected.rows).disabled, true);
+  const authenticated = load({
+    settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) }
+  }, async () => ({ ok: true, json: async () => ({ clips: ['sample'] }) }));
+  assert.equal(findGenerate(authenticated.rows).disabled, true, 'no clips available');
+  await authenticated.events['ai-dub-clips']();
+  assert.equal(findGenerate(authenticated.render()).disabled, false, 'one valid clip loaded');
 });
