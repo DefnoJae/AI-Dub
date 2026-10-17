@@ -1,6 +1,6 @@
 # AI Dub
 
-Local-first AI dubbing companion for Seanime, with optional opt-in cloud acceleration.
+Local-first AI dubbing companion for Seanime. Optional cloud acceleration is planned but not currently implemented.
 
 > **Status: experimental offline full-episode dubbing and in-Seanime playback bridge.** Automated tests verify embedded Japanese and English tracks and the player API handoff; actual Denshi playback, dubbing quality and translation still require real-world verification. No instant live track injection.
 
