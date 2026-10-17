@@ -6,13 +6,14 @@ import tempfile
 import subprocess
 import types
 import unittest
+from unittest import mock
 import wave
 
 import numpy as np
 
 HERE = Path(__file__).resolve().parent.parent / "companion"
 sys.path.insert(0, str(HERE))
-from episode_dub import synthesize, validate_source, ffmpeg_binary, package_episode
+from episode_dub import synthesize, validate_source, ffmpeg_binary, package_episode, run
 from voice_engine import KokoroVoice
 
 
@@ -98,6 +99,42 @@ class TestEpisodeVoice(unittest.TestCase):
                 self.assertEqual(len(container.streams.audio), 2)
                 self.assertEqual(container.streams.audio[0].metadata.get("language"), "jpn")
                 self.assertEqual(container.streams.audio[1].metadata.get("language"), "eng")
+
+    def test_entire_episode_pipeline_with_fake_models_real_ffmpeg(self):
+        import av
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            ffmpeg = ffmpeg_binary()
+            source = folder / "original.mp4"
+            output = folder / "ready"
+            subprocess.run([ffmpeg, "-nostdin", "-loglevel", "error",
+                            "-f", "lavfi", "-i", "color=c=black:s=96x96:r=10:d=2",
+                            "-f", "lavfi", "-i", "sine=frequency=400:sample_rate=44100:duration=2",
+                            "-c:v", "mpeg4", "-c:a", "aac", "-shortest", str(source)],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            class FakeWhisper:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, *args, **kwargs):
+                    return iter([FakeSegment(0.0, 1.0, "Hello there.")]), types.SimpleNamespace(
+                        language="ja", language_probability=0.99)
+            fake_whisper = types.SimpleNamespace(WhisperModel=FakeWhisper)
+            args = types.SimpleNamespace(input=str(source), output=str(output),
+                                         model=str(folder), voice=str(folder),
+                                         tts="piper", kokoro_model=None, kokoro_voices=None,
+                                         kokoro_voice="af_heart")
+            with mock.patch.dict(sys.modules, {"faster_whisper": fake_whisper}):
+                with mock.patch("voice_engine.load_voice", return_value=FakePiper()):
+                    run(args)
+            report = json.loads((output / "episode-report.json").read_text("utf-8"))
+            self.assertEqual(report["status"], "generated-unreviewed")
+            self.assertTrue(report["englishSegments"])
+            self.assertTrue((output / "english-ai-dub.mp4").is_file())
+            with av.open(str(output / "english-ai-dub.mp4")) as ready:
+                self.assertEqual(len(ready.streams.audio), 2)
+                self.assertEqual(ready.streams.audio[1].metadata.get("language"), "eng")
 
     def test_local_media_paths_require_real_files(self):
         with tempfile.TemporaryDirectory() as tmp:
