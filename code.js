@@ -28,7 +28,7 @@ function init() {
     var episodeMessage = ctx.state('No episode job running.');
     var tray = ctx.newTray({
       iconUrl: 'https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg',
-      withContent: true, width: '380px'
+      withContent: true, width: '430px'
     });
 
     function validate(value) {
@@ -197,50 +197,102 @@ function init() {
         'Output path: ' + String(job.output) : 'There is no completed quality clip output yet.');
     });
     tray.render(function () {
-      var currentJob = qualityJob.get();
+      var job = qualityJob.get();
+      var cardStyle = { padding: '14px', border: '1px solid #303248',
+        borderRadius: '14px', background: '#171923', marginBottom: '10px' };
+      var titleStyle = { fontWeight: '700', fontSize: '14px', color: '#f4f4fa' };
+      var hintStyle = { fontSize: '12px', color: '#a2a4b8' };
+      var headerStyle = { fontWeight: '800', fontSize: '18px', color: '#fafaff' };
+      var mutedStyle = { fontSize: '11px', color: '#9699ae' };
+      var primaryButton = { background: '#5346d9', color: '#ffffff',
+        borderRadius: '9px' };
+      function heading(label) { return tray.text(label, { style: titleStyle }); }
+      function hint(value) { return tray.text(value, { style: hintStyle }); }
+      function card(items) { return tray.div(items, { style: cardStyle }); }
+      function actions(left, right) {
+        return tray.flex([left, right], { direction: 'row', gap: 2,
+          style: { width: '100%', marginTop: '6px' } });
+      }
       return tray.stack([
-        tray.text('✦ AI Dub  ·  Prototype'),
-        tray.text('Local AI dubbing for Seanime. Preview tools for local audio experiments.'),
-        tray.text('────────────────────────'),
-        tray.text('AI Dub session'),
-        tray.switch({ label: 'Enable AI Dub for this session (preview)', fieldRef: sessionEnabled }),
-        tray.text(sessionEnabled.current ?
-          'Session requested. English audio cannot be loaded until player integration is supported.' :
-          'Off. Original playback is unchanged.'),
-        tray.text('────────────────────────'),
-        tray.text('🔗 Local Companion'),
-        tray.text(status.get()),
-        tray.switch({ label: 'Allow local companion checks', fieldRef: enabled }),
-        tray.input({ label: 'Companion URL', fieldRef: endpoint }),
-        tray.input({ label: 'Pairing token (stored locally; visible in this field)', fieldRef: token }),
-        tray.button({ label: 'Save', onClick: 'ai-dub-save' }),
-        tray.button({ label: 'Check Connection', onClick: 'ai-dub-check', disabled: busy.get() }),
-        tray.button({ label: 'Forget Token', onClick: 'ai-dub-forget' }),
-        tray.text('────────────────────────'),
-        tray.text('▣ Denshi Player'),
-        tray.text(denshiStatus.get()),
-        tray.text(denshiInfo.get()),
-        tray.button({ label: 'Detect Playback', onClick: 'ai-dub-denshi-probe' }),
-        tray.button({ label: 'Load AI Audio Track (unavailable)', onClick: 'ai-dub-load-track' }),
-        tray.text('When supported, choose English — AI Dub in the player audio menu. Track insertion is not yet implemented.'),
-        tray.text('────────────────────────'),
-        tray.text('▤ Episode Tools'),
-        tray.text(episodeMessage.get()),
-        tray.button({ label: 'Prepare Current Episode (unavailable)', onClick: 'ai-dub-prepare-episode' }),
-        tray.button({ label: 'Refresh Status', onClick: 'ai-dub-refresh-status' }),
-        tray.button({ label: 'Show Output Path', onClick: 'ai-dub-open-output' }),
-        tray.text('────────────────────────'),
-        tray.text('♫ Quality Clip Experiments'),
-        tray.text(qualityMessage.get()),
-        tray.button({ label: 'Load Prepared Clips', onClick: 'ai-dub-clips' }),
-        tray.select({ label: 'Prepared Clip', fieldRef: clipChoice, options: clips.get().map(function (name) {
-          return { label: name, value: name };
-        }) }),
-        tray.button({ label: 'Generate Clip', onClick: 'ai-dub-quality-start',
-          disabled: !!(currentJob && currentJob.status === 'running') }),
-        tray.button({ label: 'Refresh Result', onClick: 'ai-dub-quality-refresh' }),
-        tray.text(currentJob && currentJob.status === 'completed' ? String(currentJob.output || '') : ''),
-        tray.text('Local-first prototype · audio injection and full-episode dubbing are unavailable.')
+        tray.flex([
+          tray.img({ src: 'https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg',
+            alt: 'AI Dub', width: '36px', height: '36px' }),
+          tray.stack([
+            tray.flex([
+              tray.text('AI Dub', { style: headerStyle }),
+              tray.badge({ text: 'Prototype', intent: 'primary', size: 'sm' })
+            ], { gap: 2, direction: 'row' }),
+            tray.text('Local-first dubbing for Seanime', { style: mutedStyle })
+          ], { gap: 1 })
+        ], { direction: 'row', gap: 3, style: { marginBottom: '8px' } }),
+        card([
+          tray.flex([
+            tray.stack([
+              heading('AI Dub session'),
+              hint('On-demand English dubbing · preview only')
+            ], { gap: 1 }),
+            tray.switch({ label: 'Enable AI Dub for this session', fieldRef: sessionEnabled })
+          ], { gap: 2, direction: 'column' }),
+          hint(sessionEnabled.current ?
+            'Requested for this session. Audio track injection is not available yet.' :
+            'Original audio remains unchanged.')
+        ]),
+        card([
+          tray.flex([
+            heading('Local Companion'),
+            tray.badge({ text: status.get().indexOf('Connected') === 0 ? 'Connected' : 'Not connected',
+              intent: status.get().indexOf('Connected') === 0 ? 'success' : 'gray', size: 'sm' })
+          ], { direction: 'row', gap: 2 }),
+          hint(status.get()),
+          tray.switch({ label: 'Allow local checks', fieldRef: enabled }),
+          tray.input({ label: 'Companion URL', fieldRef: endpoint }),
+          tray.input({ label: 'Pairing token (stored locally)', fieldRef: token }),
+          actions(
+            tray.button({ label: 'Save', onClick: 'ai-dub-save', style: primaryButton }),
+            tray.button({ label: 'Check Connection', onClick: 'ai-dub-check', disabled: busy.get() })
+          ),
+          tray.button({ label: 'Forget Token', onClick: 'ai-dub-forget', size: 'xs' })
+        ]),
+        card([
+          tray.flex([
+            heading('Denshi Player'),
+            tray.badge({ text: 'Experimental', intent: 'warning', size: 'sm' })
+          ], { direction: 'row', gap: 2 }),
+          hint(denshiStatus.get()),
+          denshiInfo.get() ? hint(denshiInfo.get()) : hint('Check the built-in player connection.'),
+          actions(
+            tray.button({ label: 'Detect Playback', onClick: 'ai-dub-denshi-probe', style: primaryButton }),
+            tray.button({ label: 'Load AI Audio Track', onClick: 'ai-dub-load-track',
+              disabled: true })
+          ),
+          hint('When supported, choose English — AI Dub in the player audio menu.')
+        ]),
+        card([
+          heading('Episode Tools'),
+          hint(episodeMessage.get()),
+          tray.button({ label: 'Prepare Current Episode', onClick: 'ai-dub-prepare-episode',
+            disabled: true }),
+          actions(
+            tray.button({ label: 'Refresh Status', onClick: 'ai-dub-refresh-status' }),
+            tray.button({ label: 'Show Output Path', onClick: 'ai-dub-open-output' })
+          )
+        ]),
+        card([
+          heading('Quality Clip Experiments'),
+          hint(qualityMessage.get()),
+          tray.button({ label: 'Load Prepared Clips', onClick: 'ai-dub-clips' }),
+          tray.select({ label: 'Prepared Clip', fieldRef: clipChoice,
+            options: clips.get().map(function (name) { return { label: name, value: name }; }) }),
+          actions(
+            tray.button({ label: 'Generate Clip', onClick: 'ai-dub-quality-start',
+              style: primaryButton, disabled: !!(job && job.status === 'running') }),
+            tray.button({ label: 'Refresh Result', onClick: 'ai-dub-quality-refresh' })
+          ),
+          job && job.status === 'completed' ? hint(String(job.output || '')) :
+            hint('Clips are processed locally from prepared files.')
+        ]),
+        tray.text('Prototype · Full-episode dubbing and audio-track injection are not yet implemented.',
+          { style: mutedStyle })
       ], { gap: 2 });
     });
   });
