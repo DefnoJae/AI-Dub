@@ -74,6 +74,19 @@ if (require.main === module) {
     let qualityJobs = null;
     let autoJobs = null;
     let episodeJobs = null;
+    const whisperSmall = path.join(dataDir, 'models', 'whisper-small');
+    const whisperBase = path.join(dataDir, 'models', 'whisper-base');
+    const whisper = fs.existsSync(path.join(whisperSmall, 'model.bin')) ? whisperSmall : whisperBase;
+    const piperVoice = path.join(dataDir, 'models', 'piper', 'en_US-lessac-medium.onnx');
+    const kokoroModel = path.join(dataDir, 'models', 'kokoro', 'kokoro-v1.0.onnx');
+    const kokoroVoices = path.join(dataDir, 'models', 'kokoro', 'voices-v1.0.bin');
+    const tts = process.env.AI_DUB_TTS === 'kokoro' ? 'kokoro' : 'piper';
+    if (tts === 'kokoro' && (!fs.existsSync(kokoroModel) || !fs.existsSync(kokoroVoices))) {
+      throw new Error('Kokoro TTS requested but model files are missing. Run Start-Audio.ps1 -SetupHighQuality');
+    }
+    const voiceConfig = { tts, kokoroModel, kokoroVoices,
+      kokoroVoice: process.env.AI_DUB_VOICE || 'af_heart' };
+
     if (process.env.AI_DUB_QUALITY === '1') {
       const python = path.resolve(process.env.AI_DUB_QUALITY_PYTHON || path.join('.venv-quality', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
       if (!fs.existsSync(python)) throw new Error('Quality Python environment is missing');
@@ -82,26 +95,25 @@ if (require.main === module) {
     if (process.env.AI_DUB_AUDIO === '1') {
       const python = path.resolve(process.env.AI_DUB_AUDIO_PYTHON ||
         path.join('.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
-      const whisper = path.join(dataDir, 'models', 'whisper-base');
-      const voice = path.join(dataDir, 'models', 'piper', 'en_US-lessac-medium.onnx');
+      const voice = piperVoice;
       if (!fs.existsSync(python) || !fs.existsSync(whisper) || !fs.existsSync(voice)) {
         throw new Error('Automatic clip engine dependencies missing: prepare Python, Whisper and Piper first');
       }
       autoJobs = require('./auto-jobs.cjs').createAutoJobs({
-        root: process.cwd(), dataDir, python, model: whisper, voice
+        root: process.cwd(), dataDir, python, model: whisper, voice, ...voiceConfig
       });
     }
     if (process.env.AI_DUB_EPISODES === '1') {
       if (process.env.AI_DUB_AUDIO !== '1') throw new Error('Full episode playback needs AI_DUB_AUDIO=1');
       const python = path.resolve(process.env.AI_DUB_AUDIO_PYTHON ||
         path.join('.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
-      const model = path.join(dataDir, 'models', 'whisper-base');
-      const voice = path.join(dataDir, 'models', 'piper', 'en_US-lessac-medium.onnx');
+      const model = whisper;
+      const voice = piperVoice;
       if (!fs.existsSync(python) || !fs.existsSync(model) || !fs.existsSync(voice)) {
         throw new Error('Episode dubbing models or Python environment missing');
       }
       episodeJobs = require('./episode-jobs.cjs').createEpisodeJobs({
-        root: process.cwd(), dataDir, python, model, voice, port,
+        root: process.cwd(), dataDir, python, model, voice, port, ...voiceConfig,
         seanimeBaseUrl: process.env.AI_DUB_SEANIME_URL || 'http://127.0.0.1:43211'
       });
     }
@@ -116,6 +128,7 @@ if (require.main === module) {
       console.log(autoJobs ? 'Automatic local short-clip translation enabled. Player audio unchanged.' : 'Automatic local clip mode disabled (AI_DUB_AUDIO=1).');
       console.log(episodeJobs ? 'Experimental local episode generation with playable two-audio MP4 enabled.' :
         'Full-episode rendering disabled (AI_DUB_EPISODES=1).');
+      console.log('Voice engine: ' + tts + '. Translation model: ' + path.basename(whisper));
       console.log('No cloud uploads. Playback only changes when explicitly requested in Seanime.');
     });
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());
