@@ -72,7 +72,7 @@ test('plugin bridge checks the real companion health and authentication', async 
   const store = { settings: { enabled: true, endpoint: `http://127.0.0.1:${server.address().port}`, token } };
   const ui = load(store);
   await ui.check();
-  assert.match(ui.states[0].get(), /Connected.*Dubbing unavailable/);
+  assert.match(ui.states[0].get(), /Connected.*Full-episode AI dubbing is unavailable/);
   ui.fields[2].current = 'b'.repeat(64);
   ui.save();
   await ui.check();
@@ -172,7 +172,7 @@ test('polished tray uses styled cards and only backed actions', () => {
   }
   visit(ui.rows);
   const cards = nodes.filter(n => n.component === 'div');
-  assert.equal(cards.length, 5, 'five distinct tray cards');
+  assert.equal(cards.length, 6, 'six distinct tray cards');
   for (const card of cards) {
     const style = card.args[1] && card.args[1].style;
     assert.match(style && style.borderRadius || '', /px/);
@@ -225,4 +225,33 @@ test('player detection distinguishes missing playback from a web renderer', () =
   web.events['ai-dub-denshi-probe']();
   assert.match(web.states[5].get(), /Web video renderer detected/);
   assert.match(web.states[6].get(), /does not mean Denshi was disconnected/);
+});
+
+test('automatic clip tray submits authenticated local job and refreshes status', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const jobId = 'e'.repeat(32);
+  const events = [];
+  const ui = load(store, async (url, options) => {
+    events.push({ url, options });
+    if (url.endsWith('/auto/clips')) return { ok: true, json: async () => ({ clips: ['local_episode', '../wrong'] }) };
+    if (url.endsWith('/auto/jobs')) {
+      assert.deepEqual(JSON.parse(options.body), { clip: 'local_episode', start: 0, seconds: 20 });
+      assert.equal(options.headers.Authorization, 'Bearer ' + 'a'.repeat(64));
+      return { ok: true, json: async () => ({ id: jobId, status: 'running' }) };
+    }
+    if (url.endsWith('/auto/jobs/' + jobId)) {
+      return { ok: true, json: async () => ({ id: jobId, status: 'completed', output: '/local/jobs/complete' }) };
+    }
+    throw Error('unexpected endpoint');
+  });
+  await ui.events['ai-dub-auto-clips']();
+  assert.equal(ui.states[8].get()[0], 'local_episode');
+  assert.equal(ui.fields[5].current, 'local_episode');
+  assert.equal(ui.states[12].get(), true);
+  await ui.events['ai-dub-auto-start']();
+  assert.equal(ui.states[10].get().status, 'running');
+  await ui.events['ai-dub-auto-refresh']();
+  assert.equal(ui.states[10].get().status, 'completed');
+  assert.match(ui.states[11].get(), /English dialogue WAV generated/);
+  assert.equal(events.length, 3);
 });
