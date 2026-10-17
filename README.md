@@ -2,7 +2,7 @@
 
 Local-first AI dubbing companion for Seanime, with optional opt-in cloud acceleration.
 
-> **Status: settings/status and local companion prototype, not a working dubber.** This repository does not currently translate audio, synthesize speech, or replace Seanime playback audio.
+> **Status: settings/status companion plus an experimental offline clip processor.** Seanime audio replacement is not implemented. The separate Python CLI implements local recognition, speech translation and synthesis, but a complete Japanese-to-English source test has not yet been demonstrated.
 
 ## Installation
 
@@ -14,7 +14,7 @@ Install this manifest from Seanime Extensions:
 
 - **Seanime plugin (`code.js`)**: saved settings and manual companion health check; Seanime uses a sandboxed JS runtime, not Node.js.
 - **Local companion service (prototype)**: dependency-free Node.js service on authenticated loopback. Health/status only; processing engines and caching are future work.
-- **Offline processing (future)**: speech recognition, Japanese-to-English translation, speaker segmentation, English TTS, dialogue/background separation and timed mixing.
+- **Offline clip experiment**: Whisper recognition/English speech translation and Piper synthesis are implemented in a separate Python CLI. Speaker segmentation, background separation and player mixing remain future work.
 - **Cloud acceleration (future)**: disabled by default, explicit consent and provider selection; never upload source audio automatically.
 - **Playback (unverified)**: determine whether the installed Seanime player exposes an API for secondary audio synchronization or audio-track replacement. Do not promise real-time dubbing before this is tested.
 
