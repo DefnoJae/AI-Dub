@@ -4,6 +4,8 @@ Double-click **Start-Studio.cmd** for the independent desktop app. Fresh install
 run **Setup-Studio.cmd** first. Import a video, analyze speakers, review the script,
 render/resume, preview and export. Uses UVR-MDX dialogue separation, Whisper translation
 and per-speaker Chatterbox references. [Setup, resume and limitations](docs/STUDIO.md).
+Speech timing update: source-audio speech detection, trimmed and duration-fitted takes,
+separate editable conversational `dubText`, and **Reanalyze speech timing** for old projects.
 The Seanime extension below is preserved as a separate option.
 
 # AI Dub

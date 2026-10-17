@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from studio.alignment import ALIGNMENT_VERSION, fit_aligned, spoken_text, translate_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'companion'))
@@ -84,6 +85,8 @@ def validate_script(script, duration):
             raise ValueError('Dialogue timing is outside video')
         if line['speaker'] not in speakers or not isinstance(line['text'], str) or not 0 < len(line['text'].strip()) <= 500:
             raise ValueError('Each line needs a defined speaker and 1–500 characters')
+        if 'dubText' in line and (not isinstance(line['dubText'], str) or not 0 < len(line['dubText'].strip()) <= 500):
+            raise ValueError('dubText must contain 1–500 characters of spoken English')
     for ref in speakers.values():
         if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (ref['start'], ref['end'])) or not 0 <= ref['start'] < ref['end'] <= duration + .001:
             raise ValueError('Invalid speaker reference')
@@ -94,7 +97,7 @@ def run(args):
     import numpy as np
     import soundfile as sf
     import torch
-    from quality_clip import tools_dir, fit_take
+    from quality_clip import tools_dir
     os.chdir(ROOT)
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ.setdefault('PKUSEG_HOME', str(ROOT / '.ai-dub/models/pkuseg'))
@@ -147,27 +150,26 @@ def run(args):
                         raise ValueError('Separation changed audio timing')
                 save(stems_file, dict(vocals=str(vocal), background=str(bed)))
             stems = json.loads(stems_file.read_text(encoding='utf8'))
-            transcript = work / 'translation.json'
+            transcript = work / 'speech-translation-v2.json'
             if not transcript.exists():
                 from faster_whisper import WhisperModel
                 if whisper is None:
                     whisper = WhisperModel(settings['whisper'], device='cpu', compute_type='int8', local_files_only=True)
-                segments, info = whisper.transcribe(stems['vocals'], task='translate', language='ja',
-                    beam_size=5, vad_filter=True, condition_on_previous_text=False, temperature=0)
-                lines = [dict(start=max(0, s.start) + offset, end=min(length, s.end) + offset,
-                              text=s.text.strip()) for s in segments if s.text.strip() and s.start < length]
+                # Detect and translate original speech in short windows. Translation
+                # timestamps must never determine when a character starts speaking.
+                lines = translate_windows(whisper, source_wav, offset, length)
                 save(transcript, lines)
             chunks.append(dict(offset=offset, length=length, work=work, **stems))
         del separator, whisper
         script_file = folder / 'script.json'
-        if not script_file.exists():
+        if not script_file.exists() or getattr(args, 'reanalyze', False):
             from chatterbox.models.voice_encoder import VoiceEncoder
             encoder = VoiceEncoder()
             encoder.load_state_dict(torch.load(ROOT / '.ai-dub/models/chatterbox/ve.pt', map_location='cpu', weights_only=True))
             encoder.eval()
             lines, embeddings = [], []
             for chunk in chunks:
-                for line in json.loads((chunk['work'] / 'translation.json').read_text(encoding='utf8')):
+                for line in json.loads((chunk['work'] / 'speech-translation-v2.json').read_text(encoding='utf8')):
                     print(f'Identifying speaker at {line["start"]:.1f}s', flush=True)
                     with sf.SoundFile(chunk['vocals']) as audio:
                         audio.seek(round((line['start'] - chunk['offset']) * RATE))
@@ -185,10 +187,16 @@ def run(args):
                 ref = speakers.get(label)
                 if ref is None or line['end'] - line['start'] > ref['end'] - ref['start']:
                     speakers[label] = dict(start=line['start'], end=min(line['end'], line['start'] + 8))
-            save(script_file, dict(speakers=speakers, lines=lines))
+            if script_file.exists():
+                old = json.loads(script_file.read_text(encoding='utf8'))
+                save(folder / ('script-backup-' + digest(old)[:12] + '.json'), old)
+            save(script_file, dict(alignmentVersion=ALIGNMENT_VERSION, speakers=speakers, lines=lines))
             del encoder
         script = json.loads(script_file.read_text(encoding='utf8'))
         validate_script(script, duration)
+        if script.get('alignmentVersion') != ALIGNMENT_VERSION:
+            print('Legacy/manual timestamps: use Reanalyze speech timing to detect source speech windows. '
+                  'Rendering preserves your current script timings.', flush=True)
         if args.analyze:
             print('Analysis complete. Review script.json before rendering.', flush=True)
             return
@@ -218,14 +226,14 @@ def run(args):
             work = folder / ('take-' + key)
             work.mkdir(exist_ok=True)
             complete = work / 'complete.json'
-            if not complete.exists():
+            if not complete.exists() or json.loads(complete.read_text(encoding='utf8')).get('alignmentVersion') != ALIGNMENT_VERSION:
                 raw = work / 'raw.wav'
                 if not raw.exists():
                     if model is None:
                         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
                         model = ChatterboxMultilingualTTS.from_local(str(ROOT / '.ai-dub/models/chatterbox'), device='cpu')
                     torch.manual_seed(42 + index)
-                    samples = model.generate(line['text'], language_id='en', audio_prompt_path=str(ref),
+                    samples = model.generate(spoken_text(line), language_id='en', audio_prompt_path=str(ref),
                                              cfg_weight=0.0, exaggeration=.4).squeeze().detach().cpu().numpy()
                     temp = work / 'raw.partial.wav'
                     sf.write(temp, samples, model.sr, subtype='PCM_16')
@@ -233,10 +241,11 @@ def run(args):
                 samples, rate = sf.read(raw, dtype='float32')
                 fit_dir = work / 'fit'
                 fit_dir.mkdir(exist_ok=True)
-                fitted, _, speed = fit_take(samples, rate, line['end'] - line['start'], ffmpeg, fit_dir)
-                if len(fitted) > round((line['end'] - line['start']) * RATE) + round(.08 * RATE):
-                    raise ValueError('Take overrun; shorten the English line in script.json')
-                save(complete, dict(speed=speed))
+                try:
+                    timing = fit_aligned(samples, rate, line['end'] - line['start'], ffmpeg, fit_dir)
+                except ValueError as error:
+                    raise ValueError(f'Line {index + 1} at {line["start"]:.2f}s: {error}') from error
+                save(complete, dict(alignmentVersion=ALIGNMENT_VERSION, start=line['start'], end=line['end'], **timing))
             takes.append((line, work / 'fit/fitted.wav'))
         del model
         mix = folder / 'english-mix.wav'
@@ -269,6 +278,10 @@ def run(args):
               '-af', f'volume={.98 / peak}', '-metadata:s:a:0', 'language=eng', '-movflags', '+faststart'], result)
         save(folder / 'report.json', dict(status='generated-unreviewed', duration=duration,
              speakers=len(script['speakers']), lines=len(takes), scriptHash=digest(script), originalAudioMixed=False,
+             alignmentVersion=ALIGNMENT_VERSION,
+             timing=[dict(text=spoken_text(line),
+                          **json.loads(path.parents[1].joinpath('complete.json').read_text(encoding='utf8')))
+                     for line, path in takes],
              diarization='Chatterbox voice embeddings; complete-link cosine clustering',
              limitations=['Separation may leave Japanese speech residue or remove SFX.',
                           'Speaker changes within a Whisper segment and overlapping speech are not resolved.',
@@ -285,6 +298,7 @@ def main():
     parser.add_argument('--threshold', type=float, default=.28)
     parser.add_argument('--seconds', type=float, help='Preview only; use a separate project folder')
     parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--reanalyze', action='store_true', help='Back up script and rebuild source speech timings and speakers')
     args = parser.parse_args()
     if not math.isfinite(args.threshold) or not 0 < args.threshold < 2:
         parser.error('Threshold must be between 0 and 2')

@@ -64,9 +64,9 @@ class StudioTests(unittest.TestCase):
             @classmethod
             def from_local(cls, *args, **kwargs):
                 return cls()
-            def generate(self, *args, **kwargs):
+            def generate(self, text, **kwargs):
                 calls['generation'] += 1
-                return torch.full((1, 2400), .2)
+                return torch.full((1, 38400 if text == 'Hello.' else 19200), .2)
         modules = {}
         for name, attr, value in [('audio_separator.separator', 'Separator', Separator),
                                   ('faster_whisper', 'WhisperModel', Whisper),
@@ -87,7 +87,10 @@ class StudioTests(unittest.TestCase):
             pipeline.save(project / 'script.json', script)
             args = SimpleNamespace(input=str(source), project=str(project), seconds=None,
                                    threshold=.28, whisper='unused-local-model', analyze=False)
-            with patch.dict(sys.modules, modules):
+            def fake_translation(model, path, offset, duration):
+                calls['translation'] += 1
+                return []
+            with patch.dict(sys.modules, modules), patch.object(pipeline, 'translate_windows', fake_translation):
                 pipeline.run(args)
                 self.assertEqual(calls, dict(separation=2, translation=2, generation=2))
                 original_media = pipeline.media
@@ -122,8 +125,16 @@ class StudioTests(unittest.TestCase):
             with sf.SoundFile(project / 'english-mix.wav') as audio:
                 audio.seek(10 * 44100)
                 np.testing.assert_allclose(audio.read(100), .1, atol=1e-6)
+                for second in (.1, 2.1, 59.8, 60.9):
+                    audio.seek(round(second * 44100))
+                    np.testing.assert_allclose(audio.read(100), .1, atol=1e-6)
+                for second in (.25, 1.9, 59.99, 60.02, 60.7):
+                    audio.seek(round(second * 44100))
+                    self.assertGreater(float(audio.read(100).mean()), .15)
             report = json.loads((project / 'report.json').read_text())
             self.assertFalse(report['originalAudioMixed'])
+            self.assertEqual(report['alignmentVersion'], 2)
+            self.assertAlmostEqual(report['timing'][1]['renderedDuration'], .85)
 
 
 if __name__ == '__main__':

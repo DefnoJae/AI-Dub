@@ -1,5 +1,32 @@
 # AI Dub Studio for Windows
 
+## Speech timing update
+
+Restart Studio after updating. For an existing project, click **Reanalyze speech
+timing (backs up current script)**, then review the new script before rendering.
+The old edited script is retained as `script-backup-<hash>.json`. Separation caches
+are reused, and a new speech/translation cache is used; old timestamps are not
+silently treated as audio-verified. A normal resume preserves manually edited timing.
+
+New analysis uses local Silero VAD on the original audio to locate speech windows,
+then runs Japanese transcription and English translation within those windows.
+Placement no longer follows broad English translation segment timestamps. The script
+retains `sourceJapanese`, `sourceWords`, the raw translation in `text`, and the English
+to speak in `dubText`. Edit **dubText** for concise, natural dialogue that preserves
+meaning and fits the detected window. Automatic phrasing currently applies conservative
+contractions only; it is not a contextual LLM rewrite. Whisper-base can mistranslate
+short clips and the Japanese transcript can also be wrong. Review both against the source.
+
+Generated leading/trailing silence is trimmed. Pitch-preserving stretching can now
+slow down or speed up a take within 0.75–1.35x, and its file occupies exactly the
+allocated window. A take outside those limits stops with its line number and a request
+to shorten/lengthen `dubText`; the app does not move it earlier or into the next line.
+`report.json` includes the per-line timing and stretch speed. Small stretch rounding
+is corrected within 80ms with a 5ms fade. This is utterance timing, not phoneme/viseme
+matching: VAD can miss stutters, quiet consonants or mistake music for speech. Internal
+pauses, overlapping speech and visual mouth movements still need review. No exact
+lip-sync or fully automatic acting/dialogue adaptation is claimed.
+
 An independent native desktop application. No Seanime, browser extension, Node server,
 pairing token or account is needed. The existing extension remains available separately.
 
@@ -77,8 +104,8 @@ changes within one Whisper segment, simultaneous speech, shouting, short utteran
 and exaggerated anime voices may be misidentified. References shorter than one second
 stop rendering with an actionable error. Whisper-base translations need review;
 minute boundaries can split sentences. Segments over 500 characters require editing.
-Speech that needs more than 1.6x speed to fit is rejected for script correction rather
-than silently clipped. H.264 video is re-encoded for broad Windows playback support.
+Speech outside the 0.75–1.35x timing range is rejected for script correction rather
+than silently moved outside its window. H.264 video is re-encoded for broad Windows playback support.
 
 Automated verification includes the existing extension suite and Python tests.
 The Studio integration test uses real FFmpeg/media IO and deterministic model doubles

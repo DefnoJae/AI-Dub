@@ -20,6 +20,7 @@ class Studio:
         window.geometry('950x690')
         window.minsize(740, 520)
         self.process = None
+        self.last_error = None
         self.events = queue.Queue()
         self.source = tk.StringVar()
         self.project = tk.StringVar()
@@ -51,6 +52,9 @@ class Studio:
             self.busy_widgets.append(button)
         self.pause = ttk.Button(frame, text='Pause — keep completed work', command=self.stop, state='disabled')
         self.pause.pack(anchor='w', pady=8)
+        retime = ttk.Button(frame, text='Reanalyze speech timing (backs up current script)', command=lambda: self.start(True, reanalyze=True))
+        retime.pack(anchor='w', pady=(0, 6))
+        self.busy_widgets.append(retime)
         ttk.Label(frame, textvariable=self.status, wraplength=880).pack(anchor='w', pady=6)
         self.log = tk.Text(frame, wrap='word', font=('Consolas', 10), state='disabled')
         self.log.pack(fill='both', expand=True)
@@ -83,7 +87,7 @@ class Studio:
             widget.configure(state='disabled' if busy else 'normal')
         self.pause.configure(state='normal' if busy else 'disabled')
 
-    def start(self, analyze):
+    def start(self, analyze, reanalyze=False):
         if not Path(self.source.get()).is_file() or not self.project.get().strip():
             messagebox.showerror('Import needed', 'Choose a video and project folder.')
             return
@@ -92,7 +96,10 @@ class Studio:
             args += ['--seconds', '30']
         if analyze:
             args.append('--analyze')
+        if reanalyze:
+            args.append('--reanalyze')
         self.set_busy(True)
+        self.last_error = None
         self.status.set('Working locally. Completed stages and voice takes are saved automatically.')
         try:
             environment = dict(os.environ, PYTHONIOENCODING='utf-8')
@@ -117,8 +124,11 @@ class Studio:
                 if isinstance(item, tuple):
                     self.process = None
                     self.set_busy(False)
-                    self.status.set('Completed. Review the script or play/export the result.' if item[1] == 0 else 'Stopped. Completed work is saved. Review the log, then Render / Resume.')
+                    self.status.set('Completed. Review the script or play/export the result.' if item[1] == 0 else
+                                    self.last_error or 'Stopped. Completed work is saved. Review the log, then Render / Resume.')
                 else:
+                    if item.startswith('ValueError:'):
+                        self.last_error = item.removeprefix('ValueError:').strip()
                     self.log.configure(state='normal')
                     self.log.insert('end', item)
                     self.log.see('end')
@@ -159,7 +169,7 @@ class Studio:
                 dialog.destroy()
             except Exception as error:
                 messagebox.showerror('Check script', str(error), parent=dialog)
-        ttk.Label(dialog, text='Merge speakers by changing line speaker IDs. Keep each reference at least 1 second. Save before resuming.').pack()
+        ttk.Label(dialog, text='Edit dubText for natural English that fits the speech window. Keep detected start/end times.\nMerge speakers using their IDs; references need at least 1 second. Save before resuming.').pack()
         ttk.Button(dialog, text='Save reviewed script', command=store).pack(pady=8)
         dialog.transient(self.window)
         dialog.grab_set()
@@ -168,11 +178,13 @@ class Studio:
         path = self.active() / 'AI-Dub-English.mp4'
         report = self.active() / 'report.json'
         from studio.pipeline import digest
+        from studio.alignment import ALIGNMENT_VERSION
         script = self.active() / 'script.json'
         if not path.exists() or not report.exists() or not script.exists():
             messagebox.showinfo('Render first', 'No completed video in this project yet.')
             return None
-        if json.loads(report.read_text(encoding='utf8')).get('scriptHash') != digest(json.loads(script.read_text(encoding='utf8'))):
+        result_report = json.loads(report.read_text(encoding='utf8'))
+        if result_report.get('alignmentVersion') != ALIGNMENT_VERSION or result_report.get('scriptHash') != digest(json.loads(script.read_text(encoding='utf8'))):
             messagebox.showinfo('Render changes', 'The script changed. Render / Resume to update the video first.')
             return None
         return path
