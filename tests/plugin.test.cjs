@@ -72,7 +72,7 @@ test('plugin bridge checks the real companion health and authentication', async 
   const store = { settings: { enabled: true, endpoint: `http://127.0.0.1:${server.address().port}`, token } };
   const ui = load(store);
   await ui.check();
-  assert.match(ui.states[0].get(), /Connected.*Full-episode AI dubbing is unavailable/);
+  assert.match(ui.states[0].get(), /Connected.*Instant live dubbing remains unavailable/);
   ui.fields[2].current = 'b'.repeat(64);
   ui.save();
   await ui.check();
@@ -134,7 +134,7 @@ test('Denshi probe is explicit and does not alter player audio', () => {
   ui.events['ai-dub-denshi-probe']();
   assert.equal(selections, 0);
   assert.match(ui.states[5].get(), /Native player renderer detected/);
-  assert.match(ui.states[6].get(), /Importing an additional AI audio track is not supported/);
+  assert.match(ui.states[6].get(), /bridge can open a rendered video/);
 });
 test('Denshi probe handles unavailable built-in player API', () => {
   const ui = load();
@@ -151,12 +151,12 @@ test('redesigned tray actions are wired and never pretend unsupported dubbing wo
   }
   ui.events['ai-dub-load-track']();
   assert.match(ui.states[6].get(), /no verified external-audio insertion API/);
-  ui.events['ai-dub-prepare-episode']();
-  assert.match(ui.states[7].get(), /not available/);
+  await ui.events['ai-dub-prepare-episode']();
+  assert.match(ui.states[7].get(), /Enable AI Dub for this session/);
   await ui.events['ai-dub-refresh-status']();
-  assert.match(ui.states[7].get(), /No quality clip job/);
+  assert.match(ui.states[7].get(), /No episode job is active/);
   ui.events['ai-dub-open-output']();
-  assert.match(ui.states[7].get(), /no completed quality clip/);
+  assert.match(ui.states[7].get(), /No completed dubbed episode/);
 });
 
 test('polished tray uses styled cards and only backed actions', () => {
@@ -184,8 +184,8 @@ test('polished tray uses styled cards and only backed actions', () => {
   for (const button of buttons) {
     const props = button.args[0];
     assert.equal(typeof ui.events[props.onClick], 'function', props.label);
-    if (/^(Load AI Audio Track|Prepare Current Episode)$/.test(props.label)) {
-      assert.equal(props.disabled, true, 'unsupported action must stay disabled');
+    if (/^(Play Dubbed Episode|Prepare Current Episode)$/.test(props.label)) {
+      assert.equal(props.disabled, true, 'episode controls must remain disabled until prerequisite complete');
     }
   }
   assert.ok(buttons.some(b => b.args[0].label === 'Check Connection'));
@@ -245,13 +245,64 @@ test('automatic clip tray submits authenticated local job and refreshes status',
     throw Error('unexpected endpoint');
   });
   await ui.events['ai-dub-auto-clips']();
-  assert.equal(ui.states[8].get()[0], 'local_episode');
+  assert.equal(ui.states[11].get()[0], 'local_episode');
   assert.equal(ui.fields[5].current, 'local_episode');
-  assert.equal(ui.states[11].get(), true);
+  assert.equal(ui.states[14].get(), true);
   await ui.events['ai-dub-auto-start']();
-  assert.equal(ui.states[9].get().status, 'running');
+  assert.equal(ui.states[12].get().status, 'running');
   await ui.events['ai-dub-auto-refresh']();
-  assert.equal(ui.states[9].get().status, 'completed');
-  assert.match(ui.states[10].get(), /English dialogue WAV generated/);
+  assert.equal(ui.states[12].get().status, 'completed');
+  assert.match(ui.states[13].get(), /English dialogue WAV generated/);
   assert.equal(events.length, 3);
+});
+
+test('Seanime detects current episode, submits render and opens dubbed stream only on request', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const id = 'f'.repeat(32), playbackUrl = 'http://127.0.0.1:43123/play/' + 'b'.repeat(64);
+  const media = { id: 1234, title: { romaji: 'Example Anime' } };
+  const info = { id: 'episode-playback-uuid', playbackType: 'onlinestream',
+    streamUrl: '{{SERVER_URL}}/api/v1/directstream/stream?id=example',
+    episode: { aniDBEpisode: '3', episodeNumber: 3, displayTitle: 'Episode 3' }, media };
+  const playbackCalls = [];
+  const core = {
+    getCurrentPlaybackInfo() { return info; },
+    getCurrentPlayerType() { return 'web'; },
+    getPlaybackStatus() { return { currentTime: 45 }; },
+    playStream(...args) { playbackCalls.push(args); return Promise.resolve(); }
+  };
+  const ui = load(store, async (url, options) => {
+    if (url.endsWith('/health')) return { ok: true, json: async () => ({
+      service: 'ai-dub-companion', apiVersion: 1, mode: 'local', cloudEnabled: false,
+      ready: false, capabilities: { dubbing: false },
+      experiments: { automaticClips: true, fullEpisodePlayback: true } }) };
+    if (url.endsWith('/episodes')) {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers.Authorization, 'Bearer ' + 'a'.repeat(64));
+      const body = JSON.parse(options.body);
+      assert.equal(body.playbackId, info.id);
+      assert.equal(body.source.type, 'url');
+      assert.equal(body.source.value, info.streamUrl);
+      return { ok: true, json: async () => ({ id, status: 'running', stage: 'Capturing episode' }) };
+    }
+    if (url.endsWith('/episodes/' + id)) {
+      return { ok: true, json: async () => ({
+        id, status: 'completed', playbackUrl, playbackFile: 'C:/safe/dub.mp4' }) };
+    }
+    throw new Error('unexpected request');
+  }, core);
+  await ui.check();
+  assert.equal(ui.states[9].get(), true, 'full-episode engine available');
+  ui.events['ai-dub-denshi-probe']();
+  assert.match(ui.states[10].get(), /Episode 3/);
+  ui.fields[4].current = true;
+  await ui.events['ai-dub-prepare-episode']();
+  assert.equal(playbackCalls.length, 0, 'rendering must not change playback');
+  assert.equal(ui.states[8].get().status, 'running');
+  await ui.events['ai-dub-refresh-status']();
+  assert.equal(ui.states[8].get().status, 'completed');
+  await ui.events['ai-dub-load-track']();
+  assert.equal(playbackCalls.length, 1);
+  assert.equal(playbackCalls[0][0], playbackUrl);
+  assert.equal(playbackCalls[0][1], '3');
+  assert.deepEqual(playbackCalls[0][2], media);
 });
