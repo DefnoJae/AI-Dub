@@ -43,7 +43,8 @@ function resolveInput(source, seanimeBaseUrl) {
   return url.toString();
 }
 
-function createEpisodeJobs({ root, dataDir, python, model, voice, port = 43123,
+function createEpisodeJobs({ root, dataDir, python, model, voice, tts = 'piper',
+                             kokoroModel = '', kokoroVoices = '', kokoroVoice = 'af_heart', port = 43123,
                              seanimeBaseUrl = 'http://127.0.0.1:43211', launch = spawn }) {
   if (![root, dataDir, python, model, voice].every(Boolean)) throw new Error('Incomplete episode job configuration');
   const folder = path.resolve(dataDir, 'episode-jobs');
@@ -82,7 +83,9 @@ function createEpisodeJobs({ root, dataDir, python, model, voice, port = 43123,
     const job = { id, playbackId: params.playbackId, status: 'running',
       stage: 'Starting local processing', output, playbackFile, playbackUrl };
     const args = [path.join(root, 'companion', 'episode_dub.py'),
-      '--input', source, '--output', output, '--model', model, '--voice', voice];
+      '--input', source, '--output', output, '--model', model, '--voice', voice, '--tts', tts];
+    if (tts === 'kokoro') args.push('--kokoro-model', kokoroModel,
+      '--kokoro-voices', kokoroVoices, '--kokoro-voice', kokoroVoice);
     let child;
     try {
       child = launch(python, args, { cwd: root, shell: false, windowsHide: true,
