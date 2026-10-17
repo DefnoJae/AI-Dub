@@ -69,15 +69,26 @@ function createQualityJobs({ root, python, dataDir, launch = spawn }) {
           child.stdout.pipe(log, { end: false });
           child.stderr.pipe(log, { end: false });
           log.on('error', () => {});
+          let finalized = false;
+          function finish(status, message) {
+            // Both 'error' and 'close' can fire for one child. Never let a stale
+            // callback clear a newer job or overwrite the original failure.
+            if (finalized) return;
+            finalized = true;
+            job.status = status;
+            job.message = message;
+            if (active === id) active = null;
+            log.end();
+          }
           child.on('error', () => {
-            job.status = 'failed'; job.message = 'Could not start local engine. Check Python configuration.';
-            active = null; log.end();
+            finish('failed', 'Could not start local engine. Check Python configuration.');
           });
           child.on('close', code => {
             const report = path.join(output, 'quality-report.json');
-            job.status = code === 0 && fs.existsSync(report) ? 'completed' : 'failed';
-            job.message = job.status === 'completed' ? 'Generated; listening review required. Playback is unchanged.' : 'Processing failed. Inspect the local job log; no completed dub is claimed.';
-            active = null; log.end();
+            const completed = code === 0 && fs.existsSync(report);
+            finish(completed ? 'completed' : 'failed', completed
+              ? 'Generated; listening review required. Playback is unchanged.'
+              : 'Processing failed. Inspect the local job log; no completed dub is claimed.');
           });
           send(202, publicJob(job));
         } catch { send(400, { error: 'Invalid request or missing paired inbox clip/script' }); }
