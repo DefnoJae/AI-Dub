@@ -87,3 +87,40 @@ test('server without automatic local clip mode does not expose jobs or claim rea
   assert.equal(health.capabilities.transcription, false);
   assert.equal((await fetch(rootUrl + '/auto/clips', { headers })).status, 404);
 });
+
+test('auto clip jobs serialize processing and do not claim completion without output files', async t => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-dub-auto-single-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'inbox'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'inbox', 'episode.mkv'), 'media');
+  const children = [];
+  const launch = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    children.push(child);
+    return child;
+  };
+  const token = 'a'.repeat(64);
+  const jobs = createAutoJobs({ root: tmp, dataDir: tmp, python: '/fake/python',
+    model: '/fake/whisper', voice: '/fake/piper', launch });
+  const server = createServer({ token, autoJobs: jobs });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = 'http://127.0.0.1:' + server.address().port;
+  const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+  const request = () => fetch(url + '/auto/jobs', {
+    method: 'POST', headers, body: JSON.stringify({ clip: 'episode', seconds: 20 })
+  });
+  const first = await request();
+  assert.equal(first.status, 202);
+  const id = (await first.json()).id;
+  assert.equal((await request()).status, 409);
+  assert.equal(children.length, 1);
+  children[0].emit('close', 0);
+  const failed = await (await fetch(url + '/auto/jobs/' + id, { headers })).json();
+  assert.equal(failed.status, 'failed', 'success exit alone is not enough');
+  assert.equal((await request()).status, 202, 'new request allowed after completion');
+  children[1].emit('error', new Error('mock subprocess failure'));
+  children[1].emit('close', 0);
+});
