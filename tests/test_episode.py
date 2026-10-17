@@ -97,8 +97,8 @@ class TestEpisodeVoice(unittest.TestCase):
             with av.open(str(output)) as container:
                 self.assertEqual(len(container.streams.video), 1)
                 self.assertEqual(len(container.streams.audio), 2)
-                self.assertEqual(container.streams.audio[0].metadata.get("language"), "jpn")
-                self.assertEqual(container.streams.audio[1].metadata.get("language"), "eng")
+                self.assertEqual(container.streams.audio[0].metadata.get("language"), "eng")
+                self.assertEqual(container.streams.audio[1].metadata.get("language"), "jpn")
 
     def test_entire_episode_pipeline_with_fake_models_real_ffmpeg(self):
         import av
@@ -134,7 +134,7 @@ class TestEpisodeVoice(unittest.TestCase):
             self.assertTrue((output / "english-ai-dub.mp4").is_file())
             with av.open(str(output / "english-ai-dub.mp4")) as ready:
                 self.assertEqual(len(ready.streams.audio), 2)
-                self.assertEqual(ready.streams.audio[1].metadata.get("language"), "eng")
+                self.assertEqual(ready.streams.audio[0].metadata.get("language"), "eng")
 
     def test_local_media_paths_require_real_files(self):
         with tempfile.TemporaryDirectory() as tmp:
