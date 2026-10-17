@@ -262,8 +262,18 @@ function init() {
         episodeMessage.set(result.stage || 'Episode is being prepared locally.');
       } catch (error) {
         var message = error && error.message || '';
+        var http = /HTTP (\d{3})/.exec(message);
         var safe = /^(Enable AI Dub|Enable full-episode|Playback API|No current episode|The current player|Missing anime|Invalid episode)/.test(message);
-        episodeMessage.set(safe ? message : 'Could not start episode processing. Check the local companion log and stream accessibility.');
+        if (http && http[1] === '409') {
+          episodeMessage.set('An episode is already rendering. Check the companion terminal or retry after it finishes.');
+        } else if (http && http[1] === '400') {
+          episodeMessage.set('The playing media source was rejected. Check that the video is locally accessible or that the Seanime backend uses the configured loopback port.');
+        } else if (http) {
+          episodeMessage.set('Episode processing could not start (HTTP ' + http[1] + '). Inspect the companion terminal.');
+        } else {
+          episodeMessage.set(safe ? message :
+            'Could not start episode processing. Check the local companion log and stream accessibility.');
+        }
       }
     });
     ctx.registerEventHandler('ai-dub-refresh-status', async function () {
