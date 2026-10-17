@@ -44,7 +44,9 @@ Run `npm test` for local HTTP/authentication and token lifecycle tests.
 
 ## Offline short-clip audio experiment
 
-An optional [Python clip prototype](docs/CLIP-PROTOTYPE.md) now implements Japanese recognition, speech-to-English translation, and generic English speech export using local Whisper and Piper models. This is a separate CLI experiment; the Seanime panel and HTTP service still provide connectivity/status only. It does not automatically process streams or change playback audio. See the linked setup, model downloads, limitations and validation instructions.
+The original [Python clip prototype](docs/CLIP-PROTOTYPE.md) implements Japanese recognition, speech-to-English translation, and generic English speech export using local Whisper and Piper models. This basic path is a separate CLI experiment. It does not automatically process streams or change playback audio.
+
+Version 0.3.0 adds an opt-in [reference-voice quality experiment](docs/QUALITY-CLIPS.md): Chatterbox source-speaker conditioning, vocal/background separation, timed remixing, MP4 preview export, and prepared local clip jobs from the Seanime panel. It requires a reviewed timed script and speaker references. It does not automatically dub episodes or replace live player audio.
 
 ## Seanime settings/status panel (0.2.1)
 

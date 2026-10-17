@@ -98,3 +98,24 @@ test('unsupported responses, network errors and stale checks never show ready', 
   await pending;
   assert.match(stale.states[0].get(), /Token forgotten/);
 });
+
+test('quality controls use prepared clip IDs and refresh completion', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const id = 'c'.repeat(32);
+  const ui = load(store, async (url, options) => {
+    if (url.endsWith('/quality/clips')) return { ok: true, json: () => ({ clips: ['example', '../bad'] }) };
+    if (url.endsWith('/quality/jobs')) {
+      assert.equal(JSON.parse(options.body).clip, 'example');
+      return { ok: true, json: () => ({ id, status: 'running' }) };
+    }
+    assert.ok(url.endsWith('/quality/jobs/' + id));
+    return { ok: true, json: () => ({ id, status: 'completed', output: '/local/output' }) };
+  });
+  await ui.events['ai-dub-clips']();
+  assert.equal(ui.fields[3].current, 'example');
+  assert.equal(ui.states[2].get().length, 1);
+  await ui.events['ai-dub-quality-start']();
+  assert.equal(ui.states[3].get().status, 'running');
+  await ui.events['ai-dub-quality-refresh']();
+  assert.equal(ui.states[3].get().status, 'completed');
+});
