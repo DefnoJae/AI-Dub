@@ -247,11 +247,11 @@ test('automatic clip tray submits authenticated local job and refreshes status',
   await ui.events['ai-dub-auto-clips']();
   assert.equal(ui.states[8].get()[0], 'local_episode');
   assert.equal(ui.fields[5].current, 'local_episode');
-  assert.equal(ui.states[12].get(), true);
+  assert.equal(ui.states[11].get(), true);
   await ui.events['ai-dub-auto-start']();
-  assert.equal(ui.states[10].get().status, 'running');
+  assert.equal(ui.states[9].get().status, 'running');
   await ui.events['ai-dub-auto-refresh']();
-  assert.equal(ui.states[10].get().status, 'completed');
-  assert.match(ui.states[11].get(), /English dialogue WAV generated/);
+  assert.equal(ui.states[9].get().status, 'completed');
+  assert.match(ui.states[10].get(), /English dialogue WAV generated/);
   assert.equal(events.length, 3);
 });
