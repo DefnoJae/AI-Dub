@@ -34,7 +34,7 @@ function load(store = {}, fetcher = fetch, videoCore = undefined) {
   context.init();
   rows = render();
   assert.equal(rows.component, 'stack');
-  return { fields, states, events, store, get calls() { return calls; },
+  return { rows, fields, states, events, store, get calls() { return calls; },
     save() { events['ai-dub-save'](); }, check() { return events['ai-dub-check'](); } };
 }
 
@@ -155,4 +155,37 @@ test('redesigned tray actions are wired and never pretend unsupported dubbing wo
   assert.match(ui.states[7].get(), /No quality clip job/);
   ui.events['ai-dub-open-output']();
   assert.match(ui.states[7].get(), /no completed quality clip/);
+});
+
+test('polished tray uses styled cards and only backed actions', () => {
+  const ui = load();
+  const nodes = [];
+  function visit(value) {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (value.component) {
+      nodes.push(value);
+      value.args.forEach(visit);
+    }
+  }
+  visit(ui.rows);
+  const cards = nodes.filter(n => n.component === 'div');
+  assert.equal(cards.length, 5, 'five distinct tray cards');
+  for (const card of cards) {
+    const style = card.args[1] && card.args[1].style;
+    assert.match(style && style.borderRadius || '', /px/);
+    assert.match(style && style.background || '', /^#/);
+  }
+  assert.ok(nodes.some(n => n.component === 'badge'), 'status badges are visible');
+  assert.ok(nodes.some(n => n.component === 'flex'), 'compact horizontal controls are present');
+  const buttons = nodes.filter(n => n.component === 'button');
+  for (const button of buttons) {
+    const props = button.args[0];
+    assert.equal(typeof ui.events[props.onClick], 'function', props.label);
+    if (/^(Load AI Audio Track|Prepare Current Episode)$/.test(props.label)) {
+      assert.equal(props.disabled, true, 'unsupported action must stay disabled');
+    }
+  }
+  assert.ok(buttons.some(b => b.args[0].label === 'Check Connection'));
+  assert.ok(buttons.some(b => b.args[0].label === 'Generate Clip'));
 });
