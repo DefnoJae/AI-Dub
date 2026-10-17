@@ -32,3 +32,4 @@ Eight Node tests and six Python tests cover authentication, settings, job confin
 ## Not demonstrated
 
 No live player audio attachment, pause/seek synchronization, automatic episode dubbing, automatic speaker assignment, or human-approved voice resemblance has been demonstrated. Listening review is still required. Separation may retain source speech or remove effects.
+The final end-to-end Seanime test loaded the prepared comparison clip through AI Dub 0.3.0, submitted a real authenticated companion job, and displayed completed status plus the output folder. The 16.149-second output completed in 102.093 seconds. Local readback again recovered all intended English lines; mix quantization error remained approximately 0.000031. The installed UI has been exercised; actor resemblance and listening quality remain unreviewed.
