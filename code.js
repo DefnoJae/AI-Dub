@@ -152,15 +152,15 @@ function init() {
     ctx.registerEventHandler('ai-dub-denshi-probe', function () {
       try {
         var core = ctx.videoCore;
-        if (!core || typeof core.getPlaybackStatus !== 'function') {
-          denshiStatus.set('Denshi VideoCore API unavailable in this Seanime version.');
+        if (!core) {
+          denshiStatus.set('VideoCore not exposed to this plugin session.');
           denshiInfo.set('');
           return;
         }
-        var playback = core.getPlaybackStatus();
+        var playback = typeof core.getPlaybackStatus === 'function' ? core.getPlaybackStatus() : null;
         var info = typeof core.getCurrentPlaybackInfo === 'function' ? core.getCurrentPlaybackInfo() : null;
         // No audio mutation: this checks the active built-in player only.
-        denshiStatus.set(playback ? 'Denshi playback API detected.' : 'Denshi API detected; no active playback status.');
+        denshiStatus.set('VideoCore exposed; audio selection: ' + (typeof core.setAudioTrack === 'function' ? 'yes' : 'no') + '; playback getter: ' + (typeof core.getPlaybackStatus === 'function' ? 'yes' : 'no') + '.');
         denshiInfo.set('External audio insertion is not exposed by the public VideoCore API. ' +
           (info ? 'Current playback information available.' : 'Start an episode to test playback detection.'));
       } catch (_) {
