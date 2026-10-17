@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 const CAPABILITIES = Object.freeze({ dubbing: false, transcription: false,
   translation: false, synthesis: false, playerIntegration: false, cloud: false });
 
