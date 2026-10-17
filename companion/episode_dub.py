@@ -96,7 +96,7 @@ def synthesize(segments, voice, output, duration):
 
 def run(args):
     from faster_whisper import WhisperModel
-    from piper import PiperVoice
+    from voice_engine import load_voice
     import av
     start = time.monotonic()
     source = validate_source(args.input)
@@ -134,7 +134,7 @@ def run(args):
     if info.language != "ja":
         raise ValueError("Expected Japanese speech, detected " + str(info.language))
     print("STAGE: Synthesizing English speech locally", flush=True)
-    voice = PiperVoice.load(str(Path(args.voice).resolve(strict=True)), use_cuda=False)
+    voice = load_voice(args.tts, args.voice, args.kokoro_model, args.kokoro_voices, args.kokoro_voice)
     pcm, rate, timeline = synthesize(english, voice, output, duration)
     print("STAGE: Muxing Japanese and English audio tracks", flush=True)
     result = output / "english-ai-dub.mp4"
@@ -159,7 +159,7 @@ def run(args):
         "status": "generated-unreviewed", "duration": duration,
         "elapsedSeconds": round(time.monotonic() - start, 1),
         "sourceLanguage": info.language, "languageProbability": info.language_probability,
-        "engine": "Whisper translation + generic Piper voice", "cloudUsed": False,
+        "engine": "Whisper translation + " + args.tts + " English voice", "cloudUsed": False,
         "englishSegments": timeline, "audioTracks": ["Japanese original", "English AI Dub"],
         "dubTrackDefault": True,
         "warnings": [
@@ -181,6 +181,10 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--voice", required=True)
+    parser.add_argument("--tts", choices=("piper", "kokoro"), default="piper")
+    parser.add_argument("--kokoro-model")
+    parser.add_argument("--kokoro-voices")
+    parser.add_argument("--kokoro-voice", default="af_heart")
     args = parser.parse_args()
     try:
         run(args)
