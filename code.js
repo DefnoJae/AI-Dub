@@ -115,6 +115,9 @@ function init() {
         }
         var autoReady = !!(health.experiments && health.experiments.automaticClips === true);
         autoAvailable.set(autoReady);
+        if (autoReady && autoMessage.get() === 'Automatic short-clip dubbing requires the opt-in local models.') {
+          autoMessage.set('Offline clip models are enabled. Select Load Local Clips to see prepared files.');
+        }
         var episodeReady = !!(health.experiments && health.experiments.fullEpisodePlayback === true);
         episodeAvailable.set(episodeReady);
         var companionVersion = typeof health.version === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(health.version) ?
@@ -460,6 +463,9 @@ function init() {
           ], { direction: 'row', gap: 2 }),
           hint(episodeTitle.get()),
           hint(episodeSetup.get()),
+          !episodeAvailable.get() ? tray.button({
+            label: 'Recheck Episode Engine', onClick: 'ai-dub-check', disabled: busy.get()
+          }) : hint('Episode engine connected.'),
           hint(episodeMessage.get()),
           tray.button({ label: 'Prepare Current Episode', onClick: 'ai-dub-prepare-episode',
             style: primaryButton,
