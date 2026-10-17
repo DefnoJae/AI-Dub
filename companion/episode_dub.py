@@ -180,6 +180,10 @@ def run(args):
     }
     (output / "episode-report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # The audio/video intermediates can exceed the size of the final dubbed
+    # episode. Only remove them after the playable file and report are written.
+    for scratch in (local, mono, pcm):
+        scratch.unlink(missing_ok=True)
     print("COMPLETE: " + str(result), flush=True)
 
 
