@@ -133,8 +133,8 @@ test('Denshi probe is explicit and does not alter player audio', () => {
   assert.equal(selections, 0);
   ui.events['ai-dub-denshi-probe']();
   assert.equal(selections, 0);
-  assert.match(ui.states[5].get(), /Denshi player detected/);
-  assert.match(ui.states[6].get(), /Adding external AI audio tracks is not supported/);
+  assert.match(ui.states[5].get(), /Native player renderer detected/);
+  assert.match(ui.states[6].get(), /Importing an additional AI audio track is not supported/);
 });
 test('Denshi probe handles unavailable built-in player API', () => {
   const ui = load();
@@ -223,5 +223,6 @@ test('player detection distinguishes missing playback from a web renderer', () =
   const web = load({}, fetch, { getCurrentPlayerType() { return 'web'; },
     getPlaybackStatus() { return { playing: true }; } });
   web.events['ai-dub-denshi-probe']();
-  assert.match(web.states[5].get(), /Player detected: web/);
+  assert.match(web.states[5].get(), /Web video renderer detected/);
+  assert.match(web.states[6].get(), /does not mean Denshi was disconnected/);
 });
