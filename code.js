@@ -1,6 +1,6 @@
 // Seanime runs this in Goja, not Node. Keep UI logic inside the registered callback.
 function init() {
-  console.log('[AI Dub] Settings/status prototype loaded. Dubbing is not implemented.');
+  console.log('[AI Dub] Offline episode bridge loaded. Live dubbing is not implemented.');
   $ui.register(function (ctx) {
     var saved = { enabled: false, endpoint: 'http://127.0.0.1:43123', token: '' };
     var storageError = false;
@@ -26,6 +26,11 @@ function init() {
     var denshiInfo = ctx.state('');
     var sessionEnabled = ctx.fieldRef(false);
     var episodeMessage = ctx.state('No episode job running.');
+    var episodeJob = ctx.state(null);
+    var episodeAvailable = ctx.state(false);
+    var episodeContext = null;
+    var episodeTitle = ctx.state('No episode detected.');
+
     var autoClips = ctx.state([]);
     var autoClipChoice = ctx.fieldRef('');
     var autoJob = ctx.state(null);
@@ -62,6 +67,9 @@ function init() {
         autoClipChoice.setValue('');
         autoJob.set(null);
         autoAvailable.set(false);
+        episodeAvailable.set(false);
+        episodeJob.set(null);
+        episodeContext = null;
         revision++;
         busy.set(false);
         status.set('Settings saved. Connection not checked.');
@@ -105,10 +113,14 @@ function init() {
         }
         var autoReady = !!(health.experiments && health.experiments.automaticClips === true);
         autoAvailable.set(autoReady);
+        var episodeReady = !!(health.experiments && health.experiments.fullEpisodePlayback === true);
+        episodeAvailable.set(episodeReady);
         status.set('Connected to local companion. ' + (autoReady ?
           'Automatic offline clip processing enabled.' :
           'Automatic offline clip processing not enabled on the companion.') +
-          ' Full-episode AI dubbing is unavailable.');
+          (episodeReady ? ' Offline episode playback bridge enabled.' :
+            ' Full-episode processing not enabled.') +
+          ' Instant live dubbing remains unavailable.');
       } catch (error) {
         // Do not surface network exception strings: these can contain request details.
         if (requestRevision === revision) {
@@ -210,6 +222,95 @@ function init() {
           'Still processing locally. This is not real-time playback.');
       } catch (_) { autoMessage.set('Could not refresh automatic clip job.'); }
     });
+    function inspectCurrentEpisode() {
+      var core = ctx.videoCore;
+      if (!core || typeof core.getCurrentPlaybackInfo !== 'function') {
+        throw new Error('Playback API unavailable');
+      }
+      var info = core.getCurrentPlaybackInfo();
+      if (!info || !info.id) throw new Error('No current episode playing');
+      var file = info.localFile && info.localFile.path || info.streamPath;
+      var source;
+      if (info.playbackType === 'localfile' && typeof file === 'string' && file) {
+        source = { type: 'file', value: file };
+      } else if (typeof info.streamUrl === 'string' && info.streamUrl) {
+        source = { type: 'url', value: info.streamUrl };
+      } else {
+        throw new Error('The current player did not expose an accessible media source');
+      }
+      var episode = info.episode || {};
+      var media = info.media || (typeof core.getCurrentMedia === 'function' ? core.getCurrentMedia() : null);
+      var title = episode.displayTitle || ('Episode ' + String(episode.episodeNumber || 'unknown'));
+      var aniDBEpisode = String(episode.aniDBEpisode || episode.episodeNumber || '');
+      if (!media || !aniDBEpisode) throw new Error('Missing anime metadata required for Seanime playback');
+      episodeContext = { playbackId: String(info.id), source: source,
+        aniDBEpisode: aniDBEpisode, media: media };
+      episodeTitle.set(title);
+      return episodeContext;
+    }
+    ctx.registerEventHandler('ai-dub-prepare-episode', async function () {
+      if (episodeJob.get() && episodeJob.get().status === 'running') return;
+      try {
+        if (!sessionEnabled.current) throw new Error('Enable AI Dub for this session first');
+        if (!episodeAvailable.get()) throw new Error('Enable full-episode processing in the local companion');
+        var current = inspectCurrentEpisode();
+        episodeMessage.set('Submitting ' + episodeTitle.get() + ' for offline English dubbing...');
+        var result = await qualityRequest('/episodes', { playbackId: current.playbackId,
+          source: current.source });
+        if (!result || !/^[a-f0-9]{32}$/.test(result.id)) throw new Error('Invalid episode job response');
+        episodeJob.set(result);
+        episodeMessage.set(result.stage || 'Episode is being prepared locally.');
+      } catch (error) {
+        var message = error && error.message || '';
+        var safe = /^(Enable AI Dub|Enable full-episode|Playback API|No current episode|The current player|Missing anime|Invalid episode)/.test(message);
+        episodeMessage.set(safe ? message : 'Could not start episode processing. Check the local companion log and stream accessibility.');
+      }
+    });
+    ctx.registerEventHandler('ai-dub-refresh-status', async function () {
+      var current = episodeJob.get();
+      if (!current || !/^[a-f0-9]{32}$/.test(current.id)) {
+        episodeMessage.set('No episode job is active. Start by preparing the playing episode.');
+        return;
+      }
+      try {
+        var result = await qualityRequest('/episodes/' + current.id);
+        episodeJob.set(result);
+        episodeMessage.set(result.status === 'completed' ?
+          'Your dubbed episode is ready. Click Play Dubbed Episode to load it into Seanime.' :
+          result.status === 'failed' ? 'Episode render failed. See the local episode-jobs log.' :
+          (result.stage || 'Rendering offline. Refresh to check the progress.'));
+      } catch (_) {
+        episodeMessage.set('Could not refresh the current episode job.');
+      }
+    });
+    ctx.registerEventHandler('ai-dub-load-track', async function () {
+      var job = episodeJob.get(), context = episodeContext;
+      if (!job || job.status !== 'completed' || !job.playbackUrl) {
+        denshiInfo.set('Cannot insert an audio track into the existing player: no verified external-audio insertion API. Prepare and complete an episode first.');
+        return;
+      }
+      if (!context || !context.media || !context.aniDBEpisode) {
+        denshiInfo.set('Episode context expired. Re-open the original episode, then prepare it again.');
+        return;
+      }
+      var core = ctx.videoCore;
+      if (!core || typeof core.playStream !== 'function') {
+        denshiInfo.set('This player does not expose the playStream API.');
+        return;
+      }
+      try {
+        episodeMessage.set('Opening the English AI Dub version in Seanime...');
+        await core.playStream(job.playbackUrl, context.aniDBEpisode, context.media);
+        episodeMessage.set('Opened dubbed episode. English AI audio is the default; use the player audio menu for Japanese where supported.');
+      } catch (_) {
+        episodeMessage.set('The player could not open the dubbed stream. Check the Seanime server and companion log.');
+      }
+    });
+    ctx.registerEventHandler('ai-dub-open-output', function () {
+      var job = episodeJob.get();
+      episodeMessage.set(job && job.status === 'completed' && job.playbackFile ?
+        'Episode output path: ' + String(job.playbackFile) : 'No completed dubbed episode yet.');
+    });
     ctx.registerEventHandler('ai-dub-denshi-probe', function () {
       try {
         var core = ctx.videoCore;
@@ -242,40 +343,17 @@ function init() {
         } else {
           denshiStatus.set('Playback API connected. No active episode detected.');
         }
+        try {
+          if (info && info.id) inspectCurrentEpisode();
+        } catch (_) { episodeTitle.set('Episode detected; source unavailable for dubbing.'); }
         denshiInfo.set((playerType === 'web' ?
           'Denshi desktop can play using the web renderer. This does not mean Denshi was disconnected. ' : '') +
           'Audio selection: ' + (typeof core.setAudioTrack === 'function' ? 'available' : 'not exposed') +
-          '. Importing an additional AI audio track is not supported by the documented API.');
+          '. The episode playback bridge can open a rendered video with embedded English and Japanese tracks.');
       } catch (_) {
         denshiStatus.set('Could not inspect Denshi. Check your Seanime version.');
         denshiInfo.set('');
       }
-    });
-    ctx.registerEventHandler('ai-dub-load-track', function () {
-      denshiInfo.set('Cannot load an AI audio track: this Denshi plugin runtime has no verified external-audio insertion API.');
-    });
-    ctx.registerEventHandler('ai-dub-prepare-episode', function () {
-      episodeMessage.set('Full-episode preparation is not available yet. Try the prepared quality-clip experiment below.');
-    });
-    ctx.registerEventHandler('ai-dub-refresh-status', async function () {
-      var current = qualityJob.get();
-      if (!current || !/^[a-f0-9]{32}$/.test(current.id)) {
-        episodeMessage.set('No quality clip job is active.');
-        return;
-      }
-      try {
-        var job = await qualityRequest('/quality/jobs/' + current.id);
-        qualityJob.set(job);
-        episodeMessage.set(job.status === 'completed' ? 'Quality clip completed.' :
-          job.status === 'failed' ? 'Quality clip failed; inspect the local logs.' : 'Quality clip is still processing.');
-      } catch (_) {
-        episodeMessage.set('Could not refresh. Check companion connection.');
-      }
-    });
-    ctx.registerEventHandler('ai-dub-open-output', function () {
-      var job = qualityJob.get();
-      episodeMessage.set(job && job.status === 'completed' && job.output ?
-        'Output path: ' + String(job.output) : 'There is no completed quality clip output yet.');
     });
     tray.render(function () {
       var job = qualityJob.get();
@@ -301,7 +379,7 @@ function init() {
           tray.stack([
             tray.flex([
               tray.text('AI Dub', { style: headerStyle }),
-              tray.badge({ text: 'Prototype', intent: 'primary', size: 'sm' })
+              tray.badge({ text: 'Experimental', intent: 'warning', size: 'sm' })
             ], { gap: 2, direction: 'row' }),
             tray.text('Local-first dubbing for Seanime', { style: mutedStyle })
           ], { gap: 1 })
@@ -310,12 +388,12 @@ function init() {
           tray.flex([
             tray.stack([
               heading('AI Dub session'),
-              hint('On-demand English dubbing · preview only')
+              hint('Manual, offline English episode dubbing')
             ], { gap: 1 }),
             tray.switch({ label: 'Enable AI Dub for this session', fieldRef: sessionEnabled })
           ], { gap: 2, direction: 'column' }),
           hint(sessionEnabled.current ?
-            'Requested for this session. Audio track injection is not available yet.' :
+            'Manual episode preparation enabled. Existing playback stays unchanged until you select Play Dubbed Episode.' :
             'Original audio remains unchanged.')
         ]),
         card([
@@ -347,20 +425,28 @@ function init() {
           denshiInfo.get() ? hint(denshiInfo.get()) : hint('Check the built-in player connection.'),
           actions(
             tray.button({ label: 'Detect Playback', onClick: 'ai-dub-denshi-probe', style: primaryButton }),
-            tray.button({ label: 'Load AI Audio Track', onClick: 'ai-dub-load-track',
-              disabled: true })
+            tray.button({ label: 'Play Dubbed Episode', onClick: 'ai-dub-load-track',
+              disabled: !(episodeJob.get() && episodeJob.get().status === 'completed') })
           ),
-          hint('When supported, choose English — AI Dub in the player audio menu.')
+          hint('A rendered video opens as a new Seanime stream with embedded Japanese and English audio.')
         ]),
         card([
-          heading('Episode Tools'),
+          tray.flex([
+            heading('Episode Tools'),
+            tray.badge({ text: episodeAvailable.get() ? 'Engine enabled' : 'Needs setup',
+              intent: episodeAvailable.get() ? 'success' : 'gray', size: 'sm' })
+          ], { direction: 'row', gap: 2 }),
+          hint(episodeTitle.get()),
           hint(episodeMessage.get()),
           tray.button({ label: 'Prepare Current Episode', onClick: 'ai-dub-prepare-episode',
-            disabled: true }),
+            style: primaryButton,
+            disabled: !sessionEnabled.current || !episodeAvailable.get() || !saved.enabled || !saved.token ||
+              !!(episodeJob.get() && episodeJob.get().status === 'running') }),
           actions(
             tray.button({ label: 'Refresh Status', onClick: 'ai-dub-refresh-status' }),
             tray.button({ label: 'Show Output Path', onClick: 'ai-dub-open-output' })
-          )
+          ),
+          hint('Rendering is offline and may be slow. Keep the original stream available until capture finishes.')
         ]),
         card([
           tray.flex([
@@ -398,7 +484,7 @@ function init() {
           job && job.status === 'completed' ? hint(String(job.output || '')) :
             hint('Clips are processed locally from prepared files.')
         ]),
-        tray.text('Prototype · Full-episode dubbing and audio-track injection are not yet implemented.',
+        tray.text('Experimental · Offline episode remux. Live audio injection and natural character voices are not yet available.',
           { style: mutedStyle })
       ], { gap: 2 });
     });
