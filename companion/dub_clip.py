@@ -99,7 +99,7 @@ def render_speech(segments, voice, output_dir, duration):
 
 def run(args):
     from faster_whisper import WhisperModel
-    from piper import PiperVoice
+    from voice_engine import load_voice
     validate_window(args.start, args.seconds)
     model_path = Path(args.model).resolve(strict=True)
     voice_path = Path(args.voice).resolve(strict=True)
@@ -121,12 +121,13 @@ def run(args):
     if not transcript or not english:
         raise ValueError('No recognized speech; no dub was generated')
     print('Synthesizing English locally...', flush=True)
-    voice = PiperVoice.load(str(voice_path), use_cuda=False)
+    voice = load_voice(args.tts, voice_path, args.kokoro_model, args.kokoro_voices, args.kokoro_voice)
     timing = render_speech(english, voice, output, len(audio) / 16000)
     report = {'status': 'generated-unreviewed', 'sourceLanguage': info.language,
               'languageProbability': info.language_probability, 'clipStart': args.start,
               'clipDuration': len(audio) / 16000, 'model': model_path.name,
-              'voice': voice_path.name, 'transcript': transcript, 'english': timing,
+              'voice': args.tts + (':' + args.kokoro_voice if args.tts == 'kokoro' else ':' + voice_path.name),
+              'transcript': transcript, 'english': timing,
               'cloudUsed': False, 'playerIntegrated': False,
               'limitations': ['Single generic voice; no speaker identity preservation',
                               'Dialogue only; no music/SFX separation or mixing',
@@ -145,6 +146,10 @@ def main():
     parser.add_argument('--audio-stream', type=int, default=0)
     parser.add_argument('--model', default='.ai-dub/models/whisper-base')
     parser.add_argument('--voice', default='.ai-dub/models/piper/en_US-lessac-medium.onnx')
+    parser.add_argument('--tts', choices=('piper', 'kokoro'), default='piper')
+    parser.add_argument('--kokoro-model')
+    parser.add_argument('--kokoro-voices')
+    parser.add_argument('--kokoro-voice', default='af_heart')
     args = parser.parse_args()
     try:
         run(args)
