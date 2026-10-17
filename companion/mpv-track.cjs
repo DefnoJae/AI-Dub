@@ -31,11 +31,11 @@ function mpvCommand(socketPath, command, { timeoutMs = 3000, connect = net.creat
     };
     socket.setTimeout(timeoutMs, () => finish(new Error('mpv IPC timeout')));
     socket.on('error', finish);
-    socket.on('connect', () => socket.write(JSON.stringify({ command, request_id: 1 }) + '\\n'));
+    socket.on('connect', () => socket.write(JSON.stringify({ command, request_id: 1 }) + '\n'));
     socket.on('data', chunk => {
       buffer += chunk.toString('utf8');
       if (buffer.length > 65536) return finish(new Error('mpv response too large'));
-      const newline = buffer.indexOf('\\n');
+      const newline = buffer.indexOf('\n');
       if (newline === -1) return;
       const lines = buffer.slice(0, newline).trim();
       try {
