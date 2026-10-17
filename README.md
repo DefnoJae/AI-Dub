@@ -1,3 +1,11 @@
+# Standalone AI Dub Studio (Windows)
+
+Double-click **Start-Studio.cmd** for the independent desktop app. Fresh install:
+run **Setup-Studio.cmd** first. Import a video, analyze speakers, review the script,
+render/resume, preview and export. Uses UVR-MDX dialogue separation, Whisper translation
+and per-speaker Chatterbox references. [Setup, resume and limitations](docs/STUDIO.md).
+The Seanime extension below is preserved as a separate option.
+
 # AI Dub
 
 Local-first AI dubbing companion for Seanime. Optional cloud acceleration is planned but not currently implemented.
