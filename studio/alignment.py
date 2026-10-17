@@ -2,7 +2,7 @@
 import re
 import subprocess
 
-ALIGNMENT_VERSION = 2
+ALIGNMENT_VERSION = 3
 
 
 def spoken_text(line):
@@ -35,26 +35,49 @@ def speech_windows(path):
 
 def translate_windows(model, path, offset, duration):
     audio, spans = speech_windows(path)
+    common = dict(language='ja', beam_size=5, vad_filter=False,
+                  condition_on_previous_text=False, temperature=0, repetition_penalty=1.2)
+    # Full-context Japanese recognition preserves quiet words/stutters that VAD
+    # misses, and avoids translating an isolated fraction of a sentence.
+    recognized, _ = model.transcribe(audio, task='transcribe', word_timestamps=True, **common)
+    recognized = list(recognized)
+    words = [w for segment in recognized for w in (segment.words or [])]
+    units, current = [], []
+    for word in words:
+        if current and word.start - current[-1].end > 1.0:
+            units.append(current)
+            current = []
+        current.append(word)
+        if re.search(r'[。！？!?]$', word.word.strip()):
+            units.append(current)
+            current = []
+    if current:
+        units.append(current)
+    if units:
+        spans = [dict(start=max(0, unit[0].start-.03), end=min(duration, unit[-1].end+.03),
+                      words=unit) for unit in units if unit[-1].end > unit[0].start]
     lines = []
     for span in spans:
         start, end = span['start'], min(duration, span['end'])
         if end <= start:
             continue
-        clip = audio[round(start * 16000):round(end * 16000)]
-        common = dict(language='ja', beam_size=5, vad_filter=False,
-                      condition_on_previous_text=False, temperature=0, repetition_penalty=1.2)
-        japanese, _ = model.transcribe(clip, task='transcribe', word_timestamps=True, **common)
-        japanese = list(japanese)
+        # Add acoustic context for translation, while keeping placement anchored
+        # to the original Japanese words rather than English segment times.
+        clip = audio[round(max(0,start-.3) * 16000):round(min(duration,end+.3) * 16000)]
         translated, _ = model.transcribe(clip, task='translate', **common)
         text = ' '.join(s.text.strip() for s in translated).strip()
-        if not text:
-            raise ValueError(f'Speech at {offset + start:.2f}s has no translation; review the source')
+        unit_words = span.get('words', [])
+        japanese_text = ''.join(w.word for w in unit_words)
+        if not japanese_text:
+            japanese, _ = model.transcribe(clip, task='transcribe', **common)
+            japanese_text = ''.join(s.text for s in japanese)
+        if not text or not re.search('[A-Za-z]', text):
+            text = 'Translation needs review.'
         lines.append(dict(start=offset + start, end=offset + end,
             text=text, dubText=conversational(text),
-            sourceJapanese=' '.join(s.text.strip() for s in japanese),
-            sourceWords=[dict(start=offset + start + w.start, end=offset + start + w.end, text=w.word)
-                         for s in japanese for w in (s.words or [])],
-            timingSource='Silero source audio speech detection; requires listening review'))
+            sourceJapanese=japanese_text,
+            sourceWords=[dict(start=offset + w.start, end=offset + w.end, text=w.word) for w in unit_words],
+            timingSource='Japanese word alignment with speech detection fallback; requires review'))
     return lines
 
 
@@ -74,27 +97,58 @@ def trim_silence(samples, rate):
     return samples[a:b], a / rate
 
 
-def fit_aligned(samples, rate, seconds, ffmpeg, work):
+def fit_aligned(samples, rate, seconds, ffmpeg, work, pauses=None, word_boundaries=None):
     import numpy as np
     import soundfile as sf
     trimmed, removed = trim_silence(samples, rate)
-    speed = len(trimmed) / rate / seconds
-    if not .75 <= speed <= 1.35:
-        instruction = 'shorten' if speed > 1.35 else 'lengthen'
-        raise ValueError(f'Timing needs {speed:.3f}x speech speed; {instruction} dubText to fit '
+    pause_total = sum(b-a for a,b in (pauses or []))
+    active_target = max(.1,seconds-pause_total)
+    required_speed = len(trimmed) / rate / active_target
+    if required_speed > 1.35:
+        raise ValueError(f'Timing needs {required_speed:.3f}x speech speed; shorten dubText to fit '
                          f'the {seconds:.2f}s source speech window naturally. Original timing is preserved.')
+    # A short natural phrase does not need invented words or extreme slow motion.
+    # Preserve its pace and keep the remainder of the source window silent.
+    speed = max(.75,required_speed)
     sf.write(work / 'trimmed.wav', trimmed, rate, subtype='PCM_16')
     target = work / 'fitted.wav'
     subprocess.run([ffmpeg, '-y', '-nostdin', '-v', 'error', '-i', str(work / 'trimmed.wav'),
         '-af', f'atempo={speed:.9f}', '-ar', '44100', '-ac', '1', str(target)], check=True)
     fitted, output_rate = sf.read(target, dtype='float32')
     expected = round(seconds * output_rate)
-    if abs(len(fitted) - expected) > round(.08 * output_rate):
+    if len(fitted) - expected > round(.08 * output_rate):
         raise ValueError('Time stretching missed its target; revise dubText and render again')
     # Correct small atempo edge rounding, with a 5ms end fade to avoid a cut click.
+    speech_duration = min(len(fitted),expected)/output_rate
+    padding = max(0,expected-len(fitted))/output_rate
+    inserted_pauses = False
+    # Reinsert a source hesitation between generated words, rather than padding
+    # the entire spare interval after speech has already finished.
+    if pauses and word_boundaries and padding > .02:
+        boundaries = [max(0,min(len(fitted),round((time-removed)/speed*output_rate)))
+                      for time in word_boundaries]
+        boundaries = sorted(set(i for i in boundaries if .1*output_rate<i<len(fitted)-.1*output_rate))
+        if boundaries:
+            chosen = {}
+            for a,b in pauses:
+                wanted = len(fitted)*max(0,min(1,a/seconds))
+                position = min(boundaries,key=lambda value:abs(value-wanted))
+                chosen[position] = chosen.get(position,0)+(b-a)
+            total = sum(chosen.values())
+            pieces,cursor,used = [],0,0
+            items=sorted(chosen.items())
+            for number,(position,length) in enumerate(items):
+                count = round(padding*output_rate*length/total) if number<len(items)-1 else round(padding*output_rate)-used
+                pieces.extend([fitted[cursor:position],np.zeros(count,dtype=np.float32)])
+                used+=count
+                cursor=position
+            pieces.append(fitted[cursor:])
+            fitted=np.concatenate(pieces)
+            inserted_pauses=True
     fitted = np.pad(fitted[:expected], (0, max(0, expected-len(fitted))))
     fade = min(round(.005 * output_rate), len(fitted))
     fitted[-fade:] *= np.linspace(1, 0, fade)
     sf.write(target, fitted, output_rate, subtype='PCM_16')
     return dict(speed=speed, trimmedLeadingSeconds=removed, allocatedDuration=seconds,
-                renderedDuration=len(fitted) / output_rate)
+                renderedDuration=len(fitted) / output_rate,speechDuration=speech_duration,paddingSeconds=padding,
+                paddingPlacement='between words at source hesitation' if inserted_pauses else 'tail')

@@ -3,5 +3,6 @@ node_modules/
 *.log
 .venv/
 .venv-quality/
+.venv-natural/
 __pycache__/
 *.pyc

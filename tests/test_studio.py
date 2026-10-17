@@ -90,9 +90,9 @@ class StudioTests(unittest.TestCase):
             def fake_translation(model, path, offset, duration):
                 calls['translation'] += 1
                 return []
-            with patch.dict(sys.modules, modules), patch.object(pipeline, 'translate_windows', fake_translation):
+            with patch.dict(sys.modules, modules), patch.object(pipeline, 'translate_windows', fake_translation), patch('studio.rendering.speech_verifier',return_value=None), patch('studio.alignment.speech_windows',return_value=(np.zeros(1),[])):
                 pipeline.run(args)
-                self.assertEqual(calls, dict(separation=2, translation=2, generation=2))
+                self.assertEqual(calls, dict(separation=2, translation=0, generation=2))
                 original_media = pipeline.media
                 def interrupted_mux(ffmpeg, argv, target):
                     if target.name == 'AI-Dub-English.mp4':
@@ -102,7 +102,7 @@ class StudioTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'interrupted export'):
                         pipeline.run(args)
                 pipeline.run(args)
-                self.assertEqual(calls, dict(separation=2, translation=2, generation=2))
+                self.assertEqual(calls, dict(separation=2, translation=0, generation=2))
                 script['lines'][1]['text'] = 'Edited boundary.'
                 pipeline.save(project / 'script.json', script)
                 pipeline.run(args)
@@ -133,7 +133,7 @@ class StudioTests(unittest.TestCase):
                     self.assertGreater(float(audio.read(100).mean()), .15)
             report = json.loads((project / 'report.json').read_text())
             self.assertFalse(report['originalAudioMixed'])
-            self.assertEqual(report['alignmentVersion'], 2)
+            self.assertEqual(report['alignmentVersion'], 3)
             self.assertAlmostEqual(report['timing'][1]['renderedDuration'], .85)
 
 

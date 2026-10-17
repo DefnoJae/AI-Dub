@@ -1,121 +1,102 @@
-# AI Dub Studio for Windows
+# AI Dub Studio — Windows
 
-## Speech timing update
+Independent of Seanime. The existing extension remains separate.
 
-Restart Studio after updating. For an existing project, click **Reanalyze speech
-timing (backs up current script)**, then review the new script before rendering.
-The old edited script is retained as `script-backup-<hash>.json`. Separation caches
-are reused, and a new speech/translation cache is used; old timestamps are not
-silently treated as audio-verified. A normal resume preserves manually edited timing.
+## Starting and upgrading
 
-New analysis uses local Silero VAD on the original audio to locate speech windows,
-then runs Japanese transcription and English translation within those windows.
-Placement no longer follows broad English translation segment timestamps. The script
-retains `sourceJapanese`, `sourceWords`, the raw translation in `text`, and the English
-to speak in `dubText`. Edit **dubText** for concise, natural dialogue that preserves
-meaning and fits the detected window. Automatic phrasing currently applies conservative
-contractions only; it is not a contextual LLM rewrite. Whisper-base can mistranslate
-short clips and the Japanese transcript can also be wrong. Review both against the source.
+Close old Studio windows and open Start-Studio.cmd. This laptop's runtime and models
+are prepared. Studio remembers the last project and voice mode. Import a Japanese
+video, analyze, review the numbered dialogue form, then Render / Resume.
+Play result opens the English MP4; Export copies it to a chosen folder.
 
-Generated leading/trailing silence is trimmed. Pitch-preserving stretching can now
-slow down or speed up a take within 0.75–1.35x, and its file occupies exactly the
-allocated window. A take outside those limits stops with its line number and a request
-to shorten/lengthen `dubText`; the app does not move it earlier or into the next line.
-`report.json` includes the per-line timing and stretch speed. Small stretch rounding
-is corrected within 80ms with a 5ms fade. This is utterance timing, not phoneme/viseme
-matching: VAD can miss stutters, quiet consonants or mistake music for speech. Internal
-pauses, overlapping speech and visual mouth movements still need review. No exact
-lip-sync or fully automatic acting/dialogue adaptation is claimed.
+For older projects click Reanalyze speech timing once. The old script is backed up
+as script-backup-<hash>.json; source/separation caches are reused. The supplied recording
+project was upgraded and tested locally. Do not paste old JSON over new analysis.
 
-An independent native desktop application. No Seanime, browser extension, Node server,
-pairing token or account is needed. The existing extension remains available separately.
+On a fresh Windows computer install Python 3.11 with Tcl/Tk and the Python launcher,
+then run Setup-Studio.cmd. Setup downloads Chatterbox Multilingual, UVR-MDX,
+Whisper-small, Qwen2.5-1.5B-Instruct and Kokoro. Allow several GB for models and
+additional working space per episode. Setup needs internet; inference uploads no
+source media. This is a Python desktop app, not a bundled EXE/MSI installer.
 
-## Start
+Kokoro uses its own .venv-natural environment because its numpy requirement conflicts
+with Chatterbox/UVR. Do not install its requirements into .venv-quality.
 
-On a fresh Windows computer, install Python 3.11 (including Tcl/Tk and the Python
-launcher), then double-click **Setup-Studio.cmd**. Setup installs the quality runtime,
-downloads Chatterbox Multilingual, UVR-MDX and Whisper-base, and prepares FFmpeg.
-Model downloads require internet and several GB of disk space. They are not bundled.
-On this development computer the runtime and models are already present.
+## Dialogue and timing
 
-Double-click **Start-Studio.cmd**. Import a local Japanese video. The project folder
-stores all intermediates and must have ample free disk space (several GB per episode).
-Start with the selected 30-second preview. Click **Analyze speakers**, then
-**Review / edit script** to correct English text and speaker assignments. Click
-**Render / Resume**, then **Play result** or **Export**.
+Japanese recognition uses full minute context and word timestamps, rather than
+translating isolated syllables. Punctuation and long pauses define utterances. Silero
+speech activity supplies a second view of pauses. Quiet words, stutters and timestamps
+remain imperfect; exact visual lip synchronization is not implemented.
 
-Uncheck the preview box to process the full episode. Preview and full renders have
-separate project folders; preview work is not reused in the full render. Videos up
-to 45 minutes are accepted, including 24-minute episodes. Analysis is automatic
-when Render is used without Analyze first.
+A local dialogue model drafts conversational English using nearby context and a word
+budget. Raw English/Japanese and the proposed spoken version remain available.
+Invalid drafts are rejected and the raw translation retained. Models can mistranslate,
+omit nuance or hallucinate; human review is still necessary.
 
-## Voices and dialogue removal
+Review / edit script now opens a form: select a numbered line, listen to the original,
+edit the spoken English, or change its speaker/times. No JSON editing is required.
+Save all dialogue before rendering. The advanced JSON editor remains a developer
+method, edit_json, and is not the main workflow.
 
-UVR-MDX-NET-Inst_HQ_3 separates vocals from the music/effects bed. Whisper translates
-the separated Japanese vocals into timed English lines. Chatterbox's pretrained
-voice encoder produces an embedding for each usable Whisper segment; deterministic
-complete-link cosine clustering assigns speaker IDs across the entire episode.
-The longest reference (up to eight seconds) for each cluster is reused for all of
-that speaker's English lines, including across minute boundaries.
+Clustering first uses longer reliable utterances. A short interjection between two
+turns by the same speaker inherits that identity instead of creating a third actor.
+Other short lines use the nearest reliable embedding. This heuristic can misassign
+new actors with only a short line, overlapping voices and exaggerated performances.
 
-The output mixes **only the separated background and generated English speech**.
-It never ducks or mixes in the original soundtrack. The MP4 contains one English
-audio track. Separation is imperfect: Japanese residue can remain inside the
-instrumental estimate, and sound effects can be removed. Zero audible Japanese
-cannot be guaranteed by this separator; listen to the preview.
+## Voices and recovery
 
-## Reviewing and resuming
+Automatic mode tries up to three seeded reference-conditioned takes. Failed candidates
+are recorded, so Resume does not repeat the identical failed delivery. Generated English
+is transcribed to check word agreement and remove unwanted tails.
 
-The script editor exposes JSON with `speakers` reference timestamps and timed `lines`.
-To merge incorrectly split identities, change the affected lines' `speaker` to the
-same existing ID. Each used speaker needs a clear reference of at least one second.
-Correct text and timing as needed; references use seconds in the video. Save before
-resuming. Edited lines/reference audio receive new cache keys; unchanged takes are
-reused. A stale export cannot be played/exported from the UI after script edits.
+If reference delivery still fails, Automatic switches EVERY line for that speaker to
+one consistent Kokoro voice, including previously generated lines. The substitution
+is identified in the log/report and does not clone the original actor. Natural voices
+mode uses stable generic voices directly. Reference voices only mode stops after failed
+retakes without substituting another engine.
 
-Pause terminates the render process tree and releases its OS-owned project lock.
-Render / Resume reuses completed minute separation/translations and completed voice
-takes. A stage interrupted before its completion marker restarts. FFmpeg outputs and
-JSON commits use temporary files before replacement. Raw generated speech is retained
-separately from timing fits. Do not modify source media in place; source identity and
-settings are checked before resume. Use another project folder for a changed source,
-Whisper model path or clustering threshold. Do not edit project files during a render.
+Natural generation adjusts its native pace before a small pitch-preserving FFmpeg
+fit. A short take is no longer rejected for leaving silence in a longer window.
+When source pauses and generated word boundaries are available, spare time is inserted
+between words at a source hesitation instead of putting all silence after speech.
+Otherwise spare time stays at the tail: audible speech may then finish before the
+window ends, and the report records that. No phoneme, syllable or mouth-shape matching
+is claimed. Never widen a line into another character's turn to force a render.
 
-The CLI is also available:
+Speech-recognition verification is a quality check, not proof of every spoken word.
+Fallback voice style is generic. Acting, emotion, identity and overlaps need review.
 
-```powershell
-.venv-quality\Scripts\python.exe -m studio.pipeline --input "C:\Videos\episode.mkv" --project ".ai-dub\studio-projects\episode"
-```
+## Audio and saved work
 
-Add `--analyze` for script preparation only; `--seconds 30` for a preview project;
-`--whisper PATH` to use another downloaded faster-whisper model; `--threshold .28`
-to tune speaker clustering (lower splits more identities). Keep settings consistent
-when resuming.
+UVR-MDX separates vocals/background. Only separated background and English dialogue
+are mixed, with one English audio track in the output. Japanese residue can remain
+inside the estimated background; sound effects/music can also be damaged. Zero audible
+Japanese is not guaranteed by source separation.
 
-## Limits and verification
+Pause stops the process tree. OS-owned locks prevent simultaneous project writes.
+Completed separation, scripts, candidates and fitted takes are retained. Temporary
+outputs replace final files only after a successful write. Changed text/references
+invalidate take caches; changed pause metadata refits cached candidates. Source identity
+and settings are checked before resume. Preview and full episode have separate caches.
 
-This is a Python/Tk Windows application launched by a command file, not a bundled
-EXE/MSI installer. It is independent of Seanime but requires the installed Python
-runtime and downloaded models. Inference is local and CPU based; 24-minute renders
-can take many hours. No lip synchronization or acting/performance matching is promised.
+Videos up to 45 minutes are accepted, including 24-minute episodes. CPU processing
+can take hours. report.json records voice choices/fallbacks, generated-word verification,
+stretch speed, speech duration, padding and timeline placement.
 
-Diarization is segment-level, not a full overlap-aware diarization model: speaker
-changes within one Whisper segment, simultaneous speech, shouting, short utterances
-and exaggerated anime voices may be misidentified. References shorter than one second
-stop rendering with an actionable error. Whisper-base translations need review;
-minute boundaries can split sentences. Segments over 500 characters require editing.
-Speech outside the 0.75–1.35x timing range is rejected for script correction rather
-than silently moved outside its window. H.264 video is re-encoded for broad Windows playback support.
+CLI: .venv-quality/Scripts/python.exe -m studio.pipeline --input VIDEO --project FOLDER
+Options: --analyze, --reanalyze, --seconds 30, --voice-mode automatic|reference|natural,
+--whisper PATH, --threshold .28 and --no-adapt.
 
-Automated verification includes the existing extension suite and Python tests.
-The Studio integration test uses real FFmpeg/media IO and deterministic model doubles
-on a 61-second video: two chunk boundaries, reference-conditioned take reuse, edited
-line invalidation, changed-source/settings rejection, single-audio-track muxing, video
-duration, and background-only samples outside generated speech. Model doubles do not
-establish translation quality, diarization accuracy or voice resemblance. Native Tk
-window creation is smoke-tested on Windows. A real 12-second Japanese clip completed
-UVR-MDX separation, Whisper translation, automatic clustering into two speakers,
-Chatterbox generation and English-only MP4 export. A second run reused all analysis
-and voice takes successfully. This was a technical smoke test, not a listening review
-or a speaker-accuracy benchmark. A full 24-minute model render has not
-been validated; do a short preview first.
+## Verification and limits
+
+Tests cover source timing independent of English translation timestamps, short speaker
+identity, silence trimming, pause insertion, failed-candidate retry/cache recovery,
+whole-speaker fallback consistency, generated-word checks, source/settings rejection,
+two-chunk mixing, interrupted-export resume, edited-line invalidation and single-track
+duration-correct exports. Model doubles test deterministic logic, not translation quality.
+Real Windows tests also use the supplied 15.8-second recording with actual models.
+
+A full 24-minute model render, professional acting, exact lip synchronization,
+overlap-aware diarization, universally accurate translation and a bundled installer
+remain unvalidated or unimplemented. Preview before committing to a long render.

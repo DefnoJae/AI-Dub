@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from studio.alignment import ALIGNMENT_VERSION, fit_aligned, spoken_text, translate_windows
+from studio.alignment import ALIGNMENT_VERSION, spoken_text, translate_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'companion'))
@@ -54,7 +54,7 @@ def media(ffmpeg, args, target):
     temp.replace(target)
 
 
-def cluster(embeddings, threshold=.28):
+def cluster(embeddings, threshold=.28, durations=None):
     """Deterministic complete-link cosine clustering without a new model dependency."""
     import numpy as np
     values = np.asarray(embeddings, dtype=np.float32)
@@ -63,15 +63,29 @@ def cluster(embeddings, threshold=.28):
         raise ValueError('Invalid speaker embedding')
     values = values / norms
     groups = []
-    labels = []
-    for vector in values:
+    labels = [None] * len(values)
+    reliable = [i for i in range(len(values)) if durations is None or durations[i] >= 1]
+    if not reliable:
+        reliable = list(range(len(values)))
+    for index in reliable:
+        vector = values[index]
         distances = [max(1 - float(vector @ item) for item in group) for group in groups]
         best = min(range(len(groups)), key=lambda i: distances[i]) if groups else None
         if best is None or distances[best] > threshold:
             best = len(groups)
             groups.append([])
         groups[best].append(vector)
-        labels.append(f'speaker-{best + 1:02}')
+        labels[index] = f'speaker-{best + 1:02}'
+    for index, label in enumerate(labels):
+        if label is not None:
+            continue
+        before = next((labels[i] for i in range(index-1,-1,-1) if labels[i] is not None), None)
+        after = next((labels[i] for i in range(index+1,len(labels)) if labels[i] is not None), None)
+        if before is not None and before == after:
+            labels[index] = before
+        else:
+            nearest = max(reliable, key=lambda i: float(values[index] @ values[i]))
+            labels[index] = labels[nearest]
     return labels
 
 
@@ -112,13 +126,18 @@ def run(args):
         if not 0 < duration <= 45 * 60:
             raise ValueError('Video must be between 0 and 45 minutes')
         duration = min(duration, args.seconds) if args.seconds else duration
+        whisper_path = getattr(args, 'whisper', None) or str(ROOT / '.ai-dub/models/whisper-small')
         settings = dict(version=VERSION, source=str(source), size=source.stat().st_size,
                         modified=source.stat().st_mtime_ns, duration=duration,
                         separator='UVR-MDX-NET-Inst_HQ_3.onnx', threshold=args.threshold,
-                        whisper=str(Path(args.whisper).resolve()))
+                        whisper=str(Path(whisper_path).resolve()))
         manifest = folder / 'project.json'
-        if manifest.exists() and json.loads(manifest.read_text(encoding='utf8')) != settings:
-            raise ValueError('Source or settings changed. Choose a new project folder.')
+        if manifest.exists():
+            prior = json.loads(manifest.read_text(encoding='utf8'))
+            if {k:v for k,v in prior.items() if k != 'whisper'} != {k:v for k,v in settings.items() if k != 'whisper'}:
+                raise ValueError('Source or settings changed. Choose a new project folder.')
+            if prior['whisper'] != settings['whisper'] and not getattr(args, 'reanalyze', False):
+                settings['whisper'] = prior['whisper']
         save(manifest, settings)
         ffmpeg = tools_dir()
         torch.set_num_threads(max(1, min(6, os.cpu_count() or 1)))
@@ -150,8 +169,9 @@ def run(args):
                         raise ValueError('Separation changed audio timing')
                 save(stems_file, dict(vocals=str(vocal), background=str(bed)))
             stems = json.loads(stems_file.read_text(encoding='utf8'))
-            transcript = work / 'speech-translation-v2.json'
-            if not transcript.exists():
+            transcript = work / ('speech-translation-v3-' + digest(settings['whisper'])[:8] + '.json')
+            need_analysis = not (folder / 'script.json').exists() or getattr(args, 'reanalyze', False)
+            if need_analysis and not transcript.exists():
                 from faster_whisper import WhisperModel
                 if whisper is None:
                     whisper = WhisperModel(settings['whisper'], device='cpu', compute_type='int8', local_files_only=True)
@@ -159,7 +179,7 @@ def run(args):
                 # timestamps must never determine when a character starts speaking.
                 lines = translate_windows(whisper, source_wav, offset, length)
                 save(transcript, lines)
-            chunks.append(dict(offset=offset, length=length, work=work, **stems))
+            chunks.append(dict(offset=offset, length=length, work=work, transcript=transcript, **stems))
         del separator, whisper
         script_file = folder / 'script.json'
         if not script_file.exists() or getattr(args, 'reanalyze', False):
@@ -169,7 +189,7 @@ def run(args):
             encoder.eval()
             lines, embeddings = [], []
             for chunk in chunks:
-                for line in json.loads((chunk['work'] / 'speech-translation-v2.json').read_text(encoding='utf8')):
+                for line in json.loads(chunk['transcript'].read_text(encoding='utf8')):
                     print(f'Identifying speaker at {line["start"]:.1f}s', flush=True)
                     with sf.SoundFile(chunk['vocals']) as audio:
                         audio.seek(round((line['start'] - chunk['offset']) * RATE))
@@ -180,19 +200,42 @@ def run(args):
                     lines.append(line)
             if not lines:
                 raise ValueError('No usable speech detected')
-            labels = cluster(embeddings, args.threshold)
+            labels = cluster(embeddings, args.threshold, [line['end']-line['start'] for line in lines])
             speakers = {}
             for line, label in zip(lines, labels):
                 line['speaker'] = label
                 ref = speakers.get(label)
                 if ref is None or line['end'] - line['start'] > ref['end'] - ref['start']:
                     speakers[label] = dict(start=line['start'], end=min(line['end'], line['start'] + 8))
+            del encoder
+            dialogue_folder = ROOT / '.ai-dub/models/dialogue-v1'
+            if (dialogue_folder / 'config.json').exists() and not getattr(args, 'no_adapt', False):
+                from studio.dialogue import DialogueEditor
+                print('Drafting conversational English with the local dialogue model...', flush=True)
+                editor = DialogueEditor(dialogue_folder)
+                for first in range(0, len(lines), 6):
+                    try:
+                        lines[first:first+6] = editor.adapt(lines[first:first+6])
+                    except (ValueError, KeyError, TypeError) as error:
+                        print(f'Dialogue draft needs review: {error}. Original translations retained.', flush=True)
+                del editor
+                import gc
+                gc.collect()
             if script_file.exists():
                 old = json.loads(script_file.read_text(encoding='utf8'))
                 save(folder / ('script-backup-' + digest(old)[:12] + '.json'), old)
             save(script_file, dict(alignmentVersion=ALIGNMENT_VERSION, speakers=speakers, lines=lines))
-            del encoder
         script = json.loads(script_file.read_text(encoding='utf8'))
+        if any('sourceSpeech' not in line for line in script['lines']):
+            from studio.alignment import speech_windows
+            activity=[]
+            for chunk in chunks:
+                _,spans=speech_windows(chunk['work'] / 'source.wav')
+                activity.extend(dict(start=span['start']+chunk['offset'],end=span['end']+chunk['offset']) for span in spans)
+            for line in script['lines']:
+                line['sourceSpeech']=[dict(start=max(line['start'],span['start']),end=min(line['end'],span['end']))
+                                      for span in activity if span['start']<line['end'] and span['end']>line['start']]
+            save(script_file,script)
         validate_script(script, duration)
         if script.get('alignmentVersion') != ALIGNMENT_VERSION:
             print('Legacy/manual timestamps: use Reanalyze speech timing to detect source speech windows. '
@@ -202,6 +245,8 @@ def run(args):
             return
         references = {}
         for speaker, ref in script['speakers'].items():
+            if not any(line['speaker']==speaker for line in script['lines']):
+                continue
             # Read at most eight seconds, including references spanning chunk boundaries.
             parts = []
             end = min(ref['end'], ref['start'] + 8)
@@ -212,42 +257,14 @@ def run(args):
                         audio.seek(round((a - chunk['offset']) * RATE))
                         parts.append(audio.read(round((b-a)*RATE), dtype='float32', always_2d=True).mean(axis=1))
             samples = np.concatenate(parts)
-            if len(samples) < RATE or np.max(np.abs(samples)) < .001:
-                raise ValueError(f'{speaker} needs a clear reference of at least one second; edit script.json')
+            if len(samples) < RATE // 4 or np.max(np.abs(samples)) < .001:
+                raise ValueError(f'{speaker} has no usable speech reference; review speaker assignment')
             ref_path = folder / f'reference-{digest(speaker)[:12]}.wav'
             sf.write(ref_path, samples, RATE, subtype='PCM_16')
             references[speaker] = (ref_path, hashlib.sha256(samples.tobytes()).hexdigest())
-        model = None
-        takes = []
-        for index, line in enumerate(script['lines']):
-            print(f'English line {index + 1}/{len(script["lines"])}', flush=True)
-            ref, ref_hash = references[line['speaker']]
-            key = digest(dict(line=line, reference=ref_hash, seed=42 + index, version=VERSION))
-            work = folder / ('take-' + key)
-            work.mkdir(exist_ok=True)
-            complete = work / 'complete.json'
-            if not complete.exists() or json.loads(complete.read_text(encoding='utf8')).get('alignmentVersion') != ALIGNMENT_VERSION:
-                raw = work / 'raw.wav'
-                if not raw.exists():
-                    if model is None:
-                        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-                        model = ChatterboxMultilingualTTS.from_local(str(ROOT / '.ai-dub/models/chatterbox'), device='cpu')
-                    torch.manual_seed(42 + index)
-                    samples = model.generate(spoken_text(line), language_id='en', audio_prompt_path=str(ref),
-                                             cfg_weight=0.0, exaggeration=.4).squeeze().detach().cpu().numpy()
-                    temp = work / 'raw.partial.wav'
-                    sf.write(temp, samples, model.sr, subtype='PCM_16')
-                    temp.replace(raw)
-                samples, rate = sf.read(raw, dtype='float32')
-                fit_dir = work / 'fit'
-                fit_dir.mkdir(exist_ok=True)
-                try:
-                    timing = fit_aligned(samples, rate, line['end'] - line['start'], ffmpeg, fit_dir)
-                except ValueError as error:
-                    raise ValueError(f'Line {index + 1} at {line["start"]:.2f}s: {error}') from error
-                save(complete, dict(alignmentVersion=ALIGNMENT_VERSION, start=line['start'], end=line['end'], **timing))
-            takes.append((line, work / 'fit/fitted.wav'))
-        del model
+        from studio.rendering import render_speakers, RENDER_VERSION
+        takes, voice_plan = render_speakers(script, references, folder, ROOT, ffmpeg, save, digest,
+                                          getattr(args, 'voice_mode', 'automatic'))
         mix = folder / 'english-mix.wav'
         peak = 1.0
         temp_mix = folder / 'english-mix.partial.wav'
@@ -279,6 +296,8 @@ def run(args):
         save(folder / 'report.json', dict(status='generated-unreviewed', duration=duration,
              speakers=len(script['speakers']), lines=len(takes), scriptHash=digest(script), originalAudioMixed=False,
              alignmentVersion=ALIGNMENT_VERSION,
+             voicePlan=voice_plan,
+             renderVersion=RENDER_VERSION,
              timing=[dict(text=spoken_text(line),
                           **json.loads(path.parents[1].joinpath('complete.json').read_text(encoding='utf8')))
                      for line, path in takes],
@@ -294,11 +313,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', required=True)
     parser.add_argument('--project', required=True)
-    parser.add_argument('--whisper', default=str(ROOT / '.ai-dub/models/whisper-base'))
+    parser.add_argument('--whisper', help='Local Whisper model; new projects default to Whisper-small')
     parser.add_argument('--threshold', type=float, default=.28)
     parser.add_argument('--seconds', type=float, help='Preview only; use a separate project folder')
     parser.add_argument('--analyze', action='store_true')
     parser.add_argument('--reanalyze', action='store_true', help='Back up script and rebuild source speech timings and speakers')
+    parser.add_argument('--voice-mode', choices=('automatic', 'reference', 'natural'), default='automatic')
+    parser.add_argument('--no-adapt', action='store_true', help='Keep the raw translations without a local dialogue draft')
     args = parser.parse_args()
     if not math.isfinite(args.threshold) or not 0 < args.threshold < 2:
         parser.error('Threshold must be between 0 and 2')

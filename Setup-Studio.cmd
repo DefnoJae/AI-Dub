@@ -10,6 +10,12 @@ if errorlevel 1 goto failed
 if errorlevel 1 goto failed
 ".venv-quality\Scripts\python.exe" studio\prepare.py
 if errorlevel 1 goto failed
+if not exist ".venv-natural\Scripts\python.exe" (
+  ".venv-quality\Scripts\python.exe" -m venv .venv-natural
+  if errorlevel 1 goto failed
+)
+".venv-natural\Scripts\python.exe" -m pip install -r studio\requirements-natural.txt
+if errorlevel 1 goto failed
 echo Ready. Open Start-Studio.cmd.
 pause
 exit /b 0
