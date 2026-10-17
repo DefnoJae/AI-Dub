@@ -306,3 +306,24 @@ test('Seanime detects current episode, submits render and opens dubbed stream on
   assert.equal(playbackCalls[0][1], '3');
   assert.deepEqual(playbackCalls[0][2], media);
 });
+
+test('episode preparation explains companion job conflicts without leaking request details', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const core = {
+    getCurrentPlaybackInfo() { return { id: 'active', playbackType: 'localfile',
+      streamPath: 'C:/Anime/episode.mkv', media: { id: 12 },
+      episode: { aniDBEpisode: '1', displayTitle: 'Episode 1' } }; }
+  };
+  const ui = load(store, async (url) => {
+    if (url.endsWith('/health')) return { ok: true, json: async () => ({
+      service: 'ai-dub-companion', apiVersion: 1, mode: 'local', cloudEnabled: false,
+      ready: false, capabilities: { dubbing: false },
+      experiments: { automaticClips: true, fullEpisodePlayback: true } }) };
+    return { ok: false, status: 409 };
+  }, core);
+  await ui.check();
+  ui.fields[4].current = true;
+  await ui.events['ai-dub-prepare-episode']();
+  assert.match(ui.states[7].get(), /already rendering/);
+  assert.doesNotMatch(ui.states[7].get(), /a{64}/);
+});
