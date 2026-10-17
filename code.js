@@ -173,17 +173,20 @@ function init() {
           playerType = String(state.playerType);
         }
         if (playerType === 'native') {
-          denshiStatus.set('Denshi player detected.');
+          denshiStatus.set('Native player renderer detected.');
+        } else if (playerType === 'web') {
+          denshiStatus.set('Web video renderer detected. Playback API works.');
         } else if (playerType) {
-          denshiStatus.set('Player detected: ' + playerType + '.');
+          denshiStatus.set('Player renderer: ' + playerType + '.');
         } else if (playback || state || info) {
           denshiStatus.set('Playback detected; player type unavailable.');
         } else {
           denshiStatus.set('Playback API connected. No active episode detected.');
         }
-        denshiInfo.set('Audio selection: ' +
-          (typeof core.setAudioTrack === 'function' ? 'available' : 'not exposed') +
-          '. Adding external AI audio tracks is not supported by the documented API.');
+        denshiInfo.set((playerType === 'web' ?
+          'Denshi desktop can play using the web renderer. This does not mean Denshi was disconnected. ' : '') +
+          'Audio selection: ' + (typeof core.setAudioTrack === 'function' ? 'available' : 'not exposed') +
+          '. Importing an additional AI audio track is not supported by the documented API.');
       } catch (_) {
         denshiStatus.set('Could not inspect Denshi. Check your Seanime version.');
         denshiInfo.set('');
@@ -263,6 +266,8 @@ function init() {
               intent: status.get().indexOf('Connected') === 0 ? 'success' : 'gray', size: 'sm' })
           ], { direction: 'row', gap: 2 }),
           hint(status.get()),
+          !saved.token ? hint('To pair: start the companion with npm start, copy the 64-character token from .ai-dub/pairing-token, enable local checks, then Save and Check Connection.') :
+            hint('Saved token present. Run Check Connection to verify the local companion.'),
           tray.switch({ label: 'Allow local checks', fieldRef: enabled }),
           tray.input({ label: 'Companion URL', fieldRef: endpoint }),
           tray.input({ label: 'Pairing token (stored locally)', fieldRef: token }),
