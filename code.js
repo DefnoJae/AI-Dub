@@ -280,12 +280,13 @@ function init() {
         card([
           heading('Quality Clip Experiments'),
           hint(qualityMessage.get()),
+          !saved.enabled || !saved.token ? hint('Save a valid companion token in Local Companion to enable clip processing.') : hint('Select a prepared clip to generate locally.'),
           tray.button({ label: 'Load Prepared Clips', onClick: 'ai-dub-clips' }),
           tray.select({ label: 'Prepared Clip', fieldRef: clipChoice,
             options: clips.get().map(function (name) { return { label: name, value: name }; }) }),
           actions(
             tray.button({ label: 'Generate Clip', onClick: 'ai-dub-quality-start',
-              style: primaryButton, disabled: !!(job && job.status === 'running') }),
+              style: primaryButton, disabled: !!(job && job.status === 'running') || !saved.enabled || !saved.token || clips.get().indexOf(clipChoice.current) < 0 }),
             tray.button({ label: 'Refresh Result', onClick: 'ai-dub-quality-refresh' })
           ),
           job && job.status === 'completed' ? hint(String(job.output || '')) :
