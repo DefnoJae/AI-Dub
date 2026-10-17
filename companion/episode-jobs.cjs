@@ -63,7 +63,8 @@ function createEpisodeJobs({ root, dataDir, python, model, voice, tts = 'piper',
   function start(params, send) {
     if (!params || typeof params !== 'object' ||
         typeof params.playbackId !== 'string' ||
-        !/^[\w-]{1,100}$/.test(params.playbackId)) {
+        params.playbackId.length < 1 || params.playbackId.length > 4096 ||
+        /[\u0000-\u001f\u007f]/.test(params.playbackId)) {
       return send(400, { error: 'Invalid playback identifier' });
     }
     const old = [...jobs.values()].find(j => j.playbackId === params.playbackId && j.status === 'completed');

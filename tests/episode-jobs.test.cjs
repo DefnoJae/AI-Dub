@@ -45,14 +45,22 @@ test('authenticated episode start, final report verification and private range p
   t.after(() => new Promise(resolve => server.close(resolve)));
   const base = 'http://127.0.0.1:' + server.address().port;
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+  for (const playbackId of ['', 'x'.repeat(4097), 'episode\n3']) {
+    const invalid = await fetch(base + '/episodes', { method: 'POST', headers,
+      body: JSON.stringify({ playbackId, source: { type: 'file', value: file } }) });
+    assert.equal(invalid.status, 400);
+  }
+  // Seanime streaming IDs are opaque and can include long source URLs.
+  const playbackId = 'onlinestream:episode:3:https://example.org/' + 'x'.repeat(350) + '?quality=1080&audio=ja';
   const health = await (await fetch(base + '/health', { headers })).json();
   assert.equal(health.ready, false, 'offline renderer does not imply live player injection');
   assert.equal(health.experiments.fullEpisodePlayback, true);
   const start = await fetch(base + '/episodes', { method: 'POST', headers,
-    body: JSON.stringify({ playbackId: 'some-playback', source: { type: 'file', value: file } }) });
+    body: JSON.stringify({ playbackId, source: { type: 'file', value: file } }) });
   assert.equal(start.status, 202);
   const job = await start.json();
   assert.equal(job.status, 'running');
+  assert.equal(job.playbackId, playbackId);
   assert.equal(job.playbackUrl, null, 'do not expose playable URL before completion');
   assert.equal(started.length, 1);
   assert.equal(started[0].opts.shell, false);
@@ -84,7 +92,7 @@ test('authenticated episode start, final report verification and private range p
   assert.equal(head.status, 200);
   assert.equal(head.headers.get('Content-Length'), '5000');
   const reused = await fetch(base + '/episodes', { method: 'POST', headers,
-    body: JSON.stringify({ playbackId: 'some-playback', source: { type: 'file', value: file } }) });
+    body: JSON.stringify({ playbackId, source: { type: 'file', value: file } }) });
   assert.equal(reused.status, 200);
   assert.equal((await reused.json()).id, job.id);
 });
