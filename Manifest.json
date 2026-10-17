@@ -1,7 +1,7 @@
 {
   "id": "ai-dub",
   "name": "AI Dub",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "manifestURI": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json",
   "language": "javascript",
   "type": "plugin",
