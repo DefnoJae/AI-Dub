@@ -26,8 +26,16 @@ def ffmpeg_binary():
 
 def command(argv, step):
     print("STAGE: " + step, flush=True)
-    subprocess.run(argv, check=True, stdin=subprocess.DEVNULL,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        subprocess.run(argv, check=True, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as error:
+        # CalledProcessError.__str__ includes the full command. Provider
+        # media URLs may contain signed query parameters. Never leak them.
+        raise RuntimeError(
+            step + " failed (ffmpeg exit " + str(error.returncode) +
+            "). Check media access, source expiry and codec support."
+        ) from None
 
 
 def validate_source(source):
