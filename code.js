@@ -36,6 +36,7 @@ function init() {
     var autoJob = ctx.state(null);
     var autoMessage = ctx.state('Automatic short-clip dubbing requires the opt-in local models.');
     var autoAvailable = ctx.state(false);
+    var episodeSetup = ctx.state('Run Check Connection to detect full-episode support.');
     var tray = ctx.newTray({
       iconUrl: 'https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg',
       withContent: true, width: '430px'
@@ -68,6 +69,7 @@ function init() {
         autoJob.set(null);
         autoAvailable.set(false);
         episodeAvailable.set(false);
+        episodeSetup.set('Settings changed. Run Check Connection to detect full-episode support.');
         episodeJob.set(null);
         episodeContext = null;
         revision++;
@@ -115,6 +117,15 @@ function init() {
         autoAvailable.set(autoReady);
         var episodeReady = !!(health.experiments && health.experiments.fullEpisodePlayback === true);
         episodeAvailable.set(episodeReady);
+        var companionVersion = typeof health.version === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(health.version) ?
+          health.version : 'unknown';
+        if (episodeReady) {
+          episodeSetup.set('Companion v' + companionVersion + ': full-episode engine ready. Enable AI Dub for this session and prepare the playing episode.');
+        } else if (autoReady) {
+          episodeSetup.set('Companion v' + companionVersion + ' supports short clips but not full episodes. Stop the old companion with Ctrl+C, update your local AI-Dub repository, then start it with Start-Audio.ps1 and click Check Connection.');
+        } else {
+          episodeSetup.set('Companion v' + companionVersion + ': full-episode mode is disabled. Start the updated local companion with Start-Audio.ps1, then click Check Connection.');
+        }
         status.set('Connected to local companion. ' + (autoReady ?
           'Automatic offline clip processing enabled.' :
           'Automatic offline clip processing not enabled on the companion.') +
@@ -443,10 +454,12 @@ function init() {
         card([
           tray.flex([
             heading('Episode Tools'),
-            tray.badge({ text: episodeAvailable.get() ? 'Engine enabled' : 'Needs setup',
+            tray.badge({ text: episodeAvailable.get() ? 'Engine enabled' :
+              autoAvailable.get() ? 'Update companion' : 'Needs setup',
               intent: episodeAvailable.get() ? 'success' : 'gray', size: 'sm' })
           ], { direction: 'row', gap: 2 }),
           hint(episodeTitle.get()),
+          hint(episodeSetup.get()),
           hint(episodeMessage.get()),
           tray.button({ label: 'Prepare Current Episode', onClick: 'ai-dub-prepare-episode',
             style: primaryButton,
