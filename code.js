@@ -155,16 +155,35 @@ function init() {
       try {
         var core = ctx.videoCore;
         if (!core) {
-          denshiStatus.set('VideoCore not exposed to this plugin session.');
-          denshiInfo.set('');
+          denshiStatus.set('Playback API unavailable.');
+          denshiInfo.set('Grant the Playback permission on the AI Dub extension page and reload the plugin.');
           return;
         }
-        var playback = typeof core.getPlaybackStatus === 'function' ? core.getPlaybackStatus() : null;
-        var info = typeof core.getCurrentPlaybackInfo === 'function' ? core.getCurrentPlaybackInfo() : null;
-        // No audio mutation: this checks the active built-in player only.
-        denshiStatus.set('VideoCore exposed; audio selection: ' + (typeof core.setAudioTrack === 'function' ? 'yes' : 'no') + '; playback getter: ' + (typeof core.getPlaybackStatus === 'function' ? 'yes' : 'no') + '.');
-        denshiInfo.set('External audio insertion is not exposed by the public VideoCore API. ' +
-          (info ? 'Current playback information available.' : 'Start an episode to test playback detection.'));
+        // The player APIs are bound only when the manifest requests "playback".
+        // These getters are read-only: detection never changes tracks or playback.
+        var playerType = typeof core.getCurrentPlayerType === 'function' ?
+          String(core.getCurrentPlayerType() || '') : '';
+        var playback = typeof core.getPlaybackStatus === 'function' ?
+          core.getPlaybackStatus() : null;
+        var state = typeof core.getPlaybackState === 'function' ?
+          core.getPlaybackState() : null;
+        var info = typeof core.getCurrentPlaybackInfo === 'function' ?
+          core.getCurrentPlaybackInfo() : null;
+        if (!playerType && state && state.playerType) {
+          playerType = String(state.playerType);
+        }
+        if (playerType === 'native') {
+          denshiStatus.set('Denshi player detected.');
+        } else if (playerType) {
+          denshiStatus.set('Player detected: ' + playerType + '.');
+        } else if (playback || state || info) {
+          denshiStatus.set('Playback detected; player type unavailable.');
+        } else {
+          denshiStatus.set('Playback API connected. No active episode detected.');
+        }
+        denshiInfo.set('Audio selection: ' +
+          (typeof core.setAudioTrack === 'function' ? 'available' : 'not exposed') +
+          '. Adding external AI audio tracks is not supported by the documented API.');
       } catch (_) {
         denshiStatus.set('Could not inspect Denshi. Check your Seanime version.');
         denshiInfo.set('');
