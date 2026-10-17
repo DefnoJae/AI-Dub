@@ -1,6 +1,6 @@
 {
   "name": "ai-dub-companion",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Local AI Dub companion with optional prepared quality clip jobs",
   "engines": { "node": ">=22" },
