@@ -325,8 +325,10 @@ function init() {
               intent: status.get().indexOf('Connected') === 0 ? 'success' : 'gray', size: 'sm' })
           ], { direction: 'row', gap: 2 }),
           hint(status.get()),
-          !saved.token ? hint('To pair: start the companion with npm start, copy the 64-character token from .ai-dub/pairing-token, enable local checks, then Save and Check Connection.') :
-            hint('Saved token present. Run Check Connection to verify the local companion.'),
+          !saved.token ? hint('To pair: start the companion, enter the 64-character local token, enable checks, then Save and Check Connection.') :
+            status.get().indexOf('Connected') === 0 ?
+              hint('Paired locally. Your saved token remains unchanged.') :
+              hint('Saved token present. Run Check Connection to verify the companion.'),
           tray.switch({ label: 'Allow local checks', fieldRef: enabled }),
           tray.input({ label: 'Companion URL', fieldRef: endpoint }),
           tray.input({ label: 'Pairing token (stored locally)', fieldRef: token }),
