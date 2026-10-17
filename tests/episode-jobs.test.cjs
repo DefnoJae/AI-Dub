@@ -74,6 +74,10 @@ test('authenticated episode start, final report verification and private range p
   assert.equal(video.status, 206);
   assert.equal(video.headers.get('Content-Range'), 'bytes 3-9/5000');
   assert.equal((await video.arrayBuffer()).byteLength, 7);
+  const suffix = await fetch(base + pathname, { headers: { Range: 'bytes=-6' } });
+  assert.equal(suffix.status, 206);
+  assert.equal(suffix.headers.get('Content-Range'), 'bytes 4994-4999/5000');
+  assert.equal((await suffix.arrayBuffer()).byteLength, 6);
   const invalid = await fetch(base + pathname, { headers: { Range: 'bytes=999999-999999' } });
   assert.equal(invalid.status, 416);
   const head = await fetch(base + pathname, { method: 'HEAD' });
