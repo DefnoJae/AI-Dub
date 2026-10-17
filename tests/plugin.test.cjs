@@ -12,7 +12,7 @@ test('manifest grants the loopback network access required by ctx.fetch', () => 
   assert.deepEqual(manifest.plugin.permissions.scopes, ['storage']);
 });
 
-function load(store = {}, fetcher = fetch) {
+function load(store = {}, fetcher = fetch, videoCore = undefined) {
   const events = {}, fields = [], states = [];
   let render, calls = 0, rows;
   const tray = new Proxy({ render(fn) { render = fn; } }, {
@@ -20,6 +20,7 @@ function load(store = {}, fetcher = fetch) {
   });
   const ctx = {
     newTray: () => tray,
+    videoCore,
     fieldRef(value) { const field = { current: value, setValue(v) { this.current = v; } }; fields.push(field); return field; },
     state(value) { const state = { get: () => value, set(v) { value = v; } }; states.push(state); return state; },
     registerEventHandler(name, fn) { events[name] = fn; },
@@ -118,4 +119,24 @@ test('quality controls use prepared clip IDs and refresh completion', async () =
   assert.equal(ui.states[3].get().status, 'running');
   await ui.events['ai-dub-quality-refresh']();
   assert.equal(ui.states[3].get().status, 'completed');
+});
+
+test('Denshi probe is explicit and does not alter player audio', () => {
+  let selections = 0;
+  const videoCore = {
+    getPlaybackStatus() { return { playing: true }; },
+    getCurrentPlaybackInfo() { return { episode: 1 }; },
+    setAudioTrack() { selections++; }
+  };
+  const ui = load({}, fetch, videoCore);
+  assert.equal(selections, 0);
+  ui.events['ai-dub-denshi-probe']();
+  assert.equal(selections, 0);
+  assert.match(ui.states[6].get(), /Denshi playback API detected/);
+  assert.match(ui.states[7].get(), /External audio insertion/);
+});
+test('Denshi probe handles unavailable built-in player API', () => {
+  const ui = load();
+  ui.events['ai-dub-denshi-probe']();
+  assert.match(ui.states[6].get(), /unavailable/);
 });
