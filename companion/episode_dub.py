@@ -37,6 +37,8 @@ def validate_source(source):
         if not url.hostname or url.username or url.password or url.fragment:
             raise ValueError("Unsupported source URL")
         return source
+    if "://" in source:
+        raise ValueError("Unsupported media URL scheme")
     file = Path(source).expanduser().resolve(strict=True)
     if not file.is_file() or file.suffix.lower() not in (".mkv", ".mp4", ".mov", ".webm", ".m4v", ".avi"):
         raise ValueError("Expected an accessible local media file")
