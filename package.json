@@ -1,0 +1,11 @@
+{
+  "name": "ai-dub-companion",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Local AI Dub companion prototype; no dubbing engine yet",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node companion/server.cjs",
+    "test": "node --test tests/*.test.cjs"
+  }
+}
