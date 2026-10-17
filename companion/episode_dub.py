@@ -96,6 +96,24 @@ def synthesize(segments, voice, output, duration):
     return pcm, rate, timeline
 
 
+def package_episode(local, pcm, rate, result, ffmpeg):
+    # Duck the original dialogue to preserve some music/SFX.
+    # This is NOT clean vocal removal; Japanese voices may remain audible.
+    filter_complex = "[0:a:0]volume=0.18[originalbed];[1:a:0]volume=1.0[speech];" \
+                     "[originalbed][speech]amix=inputs=2:duration=first:normalize=0[dub]"
+    command([ffmpeg, "-nostdin", "-loglevel", "error", "-y",
+             "-i", str(local), "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", str(pcm),
+             "-filter_complex", filter_complex,
+             "-map", "0:v:0", "-map", "0:a:0", "-map", "[dub]",
+             "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+             "-metadata:s:a:0", "language=jpn",
+             "-metadata:s:a:0", "title=Japanese (Original)",
+             "-metadata:s:a:1", "language=eng",
+             "-metadata:s:a:1", "title=English - AI Dub",
+             "-disposition:a:0", "0", "-disposition:a:1", "default",
+             "-movflags", "+faststart", str(result)], "Creating playable episode")
+
+
 def run(args):
     from faster_whisper import WhisperModel
     from voice_engine import load_voice
@@ -140,21 +158,7 @@ def run(args):
     pcm, rate, timeline = synthesize(english, voice, output, duration)
     print("STAGE: Muxing Japanese and English audio tracks", flush=True)
     result = output / "english-ai-dub.mp4"
-    # Duck the original dialogue to preserve some music/SFX.
-    # This is NOT clean vocal removal; Japanese voices may remain audible.
-    filter_complex = "[0:a:0]volume=0.18[originalbed];[1:a:0]volume=1.0[speech];" \
-                     "[originalbed][speech]amix=inputs=2:duration=first:normalize=0[dub]"
-    command([ffmpeg, "-nostdin", "-loglevel", "error", "-y",
-             "-i", str(local), "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", str(pcm),
-             "-filter_complex", filter_complex,
-             "-map", "0:v:0", "-map", "0:a:0", "-map", "[dub]",
-             "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-             "-metadata:s:a:0", "language=jpn",
-             "-metadata:s:a:0", "title=Japanese (Original)",
-             "-metadata:s:a:1", "language=eng",
-             "-metadata:s:a:1", "title=English - AI Dub",
-             "-disposition:a:0", "0", "-disposition:a:1", "default",
-             "-movflags", "+faststart", str(result)], "Creating playable episode")
+    package_episode(local, pcm, rate, result, ffmpeg)
     if not result.exists() or result.stat().st_size == 0:
         raise ValueError("Muxer did not produce an episode")
     report = {
