@@ -42,6 +42,13 @@ foreach ($item in @($python, $model, $voice)) {
     }
 }
 
+# A previous 0.4.x installation can have working Whisper/Piper but no FFmpeg
+# dependency. Fail before advertising a working full-episode engine.
+& $python -c "import faster_whisper, piper, av, imageio_ffmpeg"
+if ($LASTEXITCODE -ne 0) {
+    throw 'Missing episode audio dependencies. Run .\Start-Audio.ps1 -Setup, then restart the companion.'
+}
+
 $port = if ($env:AI_DUB_PORT) { [int]$env:AI_DUB_PORT } else { 43123 }
 if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
     throw "Port $port is occupied. Stop the existing companion with Ctrl+C before launching this version. No process was terminated."
