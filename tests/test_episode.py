@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import types
 import unittest
 import wave
@@ -11,7 +12,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent.parent / "companion"
 sys.path.insert(0, str(HERE))
-from episode_dub import synthesize, validate_source
+from episode_dub import synthesize, validate_source, ffmpeg_binary, package_episode
 from voice_engine import KokoroVoice
 
 
@@ -75,6 +76,28 @@ class TestEpisodeVoice(unittest.TestCase):
                     sys.modules.pop("kokoro_onnx", None)
                 else:
                     sys.modules["kokoro_onnx"] = original
+
+    def test_embedded_japanese_and_english_tracks_are_real(self):
+        import av
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            ffmpeg = ffmpeg_binary()
+            source = folder / "original.mp4"
+            pcm = folder / "dialogue.pcm"
+            output = folder / "dub.mp4"
+            subprocess.run([ffmpeg, "-nostdin", "-loglevel", "error",
+                            "-f", "lavfi", "-i", "color=c=black:s=96x96:r=10:d=2",
+                            "-f", "lavfi", "-i", "sine=frequency=400:sample_rate=44100:duration=2",
+                            "-c:v", "mpeg4", "-c:a", "aac", "-shortest", str(source)],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            pcm.write_bytes((np.sin(np.linspace(0, 1000, 48000)) * 10000).astype("<i2").tobytes())
+            package_episode(source, pcm, 24000, output, ffmpeg)
+            self.assertGreater(output.stat().st_size, 1000)
+            with av.open(str(output)) as container:
+                self.assertEqual(len(container.streams.video), 1)
+                self.assertEqual(len(container.streams.audio), 2)
+                self.assertEqual(container.streams.audio[0].metadata.get("language"), "jpn")
+                self.assertEqual(container.streams.audio[1].metadata.get("language"), "eng")
 
     def test_local_media_paths_require_real_files(self):
         with tempfile.TemporaryDirectory() as tmp:
