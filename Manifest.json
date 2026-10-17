@@ -1,7 +1,7 @@
 {
   "id": "ai-dub",
   "name": "AI Dub",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "manifestURI": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json",
   "language": "javascript",
   "type": "plugin",
@@ -15,6 +15,14 @@
   "payloadURI": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/code.js",
   "plugin": {
     "version": "1",
-    "permissions": { "scopes": ["storage"] }
+    "permissions": {
+      "scopes": ["storage"],
+      "allow": {
+        "networkAccess": {
+          "allowedDomains": ["http://127.0.0.1"],
+          "reasoning": "Check the authenticated AI Dub companion on this machine only. No cloud access or media uploads."
+        }
+      }
+    }
   }
 }

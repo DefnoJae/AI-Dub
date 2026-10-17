@@ -42,8 +42,8 @@ Seanime and the companion must run on the same machine. In containers, loopback 
 
 Run `npm test` for local HTTP/authentication and token lifecycle tests.
 
-## Seanime settings/status panel (0.2.0)
+## Seanime settings/status panel (0.2.1)
 
-Update/reload the extension using the manifest above and approve its new **storage** permission. Open the blue waveform tray icon. Paste the companion token, enable **Allow local status checks**, and click **Save settings**, then **Check saved connection**. The token is visible in this panel and persisted in Seanime's plugin storage, not an OS credential vault. **Forget token / disable checks** clears the plugin's saved credential; to revoke all copies, stop the companion, delete its pairing-token file and restart to generate a new one.
+Update/reload the extension using the manifest above and approve **storage** and **local network access to http://127.0.0.1**. Version 0.2.1 fixes the missing network allowlist in 0.2.0. Open the blue waveform tray icon; if it is hidden, open Seanime's all-plugins menu and select **AI Dub**. Paste the companion token, enable **Allow local status checks**, and click **Save settings**, then **Check saved connection**. The token is visible in this panel and persisted in Seanime's plugin storage, not an OS credential vault. **Forget token / disable checks** clears the plugin's saved credential; to revoke all copies, stop the companion, delete its pairing-token file and restart to generate a new one.
 
 Only saved settings are used for checks. No connection is attempted automatically. The default is local checks disabled, and cloud mode is unavailable. A successful check says **Connected** and **Dubbing unavailable**. An unreachable service, bad token, or incompatible API produces a separate error message. This release's UI still needs verification in a real Seanime session; automated UI tests use mocks. See [player/API review](docs/PLAYER-API-REVIEW.md) for the research and test boundary.

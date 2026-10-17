@@ -6,6 +6,12 @@ const path = require('node:path');
 const { createServer } = require('../companion/server.cjs');
 const code = fs.readFileSync(path.join(__dirname, '../code.js'), 'utf8');
 
+test('manifest grants the loopback network access required by ctx.fetch', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../Manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.plugin.permissions.allow.networkAccess.allowedDomains, ['http://127.0.0.1']);
+  assert.deepEqual(manifest.plugin.permissions.scopes, ['storage']);
+});
+
 function load(store = {}, fetcher = fetch) {
   const events = {}, fields = [], states = [];
   let render, calls = 0, rows;
