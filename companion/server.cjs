@@ -123,7 +123,7 @@ if (require.main === module) {
     server.on('error', error => { console.error('Companion startup failed:', error.message); process.exitCode = 1; });
     server.listen(port, '127.0.0.1', () => {
       console.log(`AI Dub companion ${VERSION}: http://127.0.0.1:${port}`);
-      console.log(`Copy the token from ${file} into the Seanime AI Dub panel.`);
+      console.log('Pairing file is preserved at ' + file + '. Reuse the token already saved in Seanime.');
       console.log(qualityJobs ? 'Local quality clip jobs enabled.' : 'Reference-voice quality mode disabled.');
       console.log(autoJobs ? 'Automatic local short-clip translation enabled. Player audio unchanged.' : 'Automatic local clip mode disabled (AI_DUB_AUDIO=1).');
       console.log(episodeJobs ? 'Experimental local episode generation with playable two-audio MP4 enabled.' :
