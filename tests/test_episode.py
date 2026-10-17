@@ -132,6 +132,9 @@ class TestEpisodeVoice(unittest.TestCase):
             self.assertEqual(report["status"], "generated-unreviewed")
             self.assertTrue(report["englishSegments"])
             self.assertTrue((output / "english-ai-dub.mp4").is_file())
+            for name in ("source.mkv", "japanese-16k.wav", "english-dialogue.pcm"):
+                self.assertFalse((output / name).exists(),
+                                 "large temporary files should not remain after a successful render")
             with av.open(str(output / "english-ai-dub.mp4")) as ready:
                 self.assertEqual(len(ready.streams.audio), 2)
                 self.assertEqual(ready.streams.audio[0].metadata.get("language"), "eng")
