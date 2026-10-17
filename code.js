@@ -26,6 +26,11 @@ function init() {
     var denshiInfo = ctx.state('');
     var sessionEnabled = ctx.fieldRef(false);
     var episodeMessage = ctx.state('No episode job running.');
+    var autoClips = ctx.state([]);
+    var autoClipChoice = ctx.fieldRef('');
+    var autoJob = ctx.state(null);
+    var autoMessage = ctx.state('Automatic short-clip dubbing requires the opt-in local models.');
+    var autoAvailable = ctx.state(false);
     var tray = ctx.newTray({
       iconUrl: 'https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg',
       withContent: true, width: '430px'
@@ -53,6 +58,10 @@ function init() {
         clips.set([]);
         clipChoice.setValue('');
         qualityJob.set(null);
+        autoClips.set([]);
+        autoClipChoice.setValue('');
+        autoJob.set(null);
+        autoAvailable.set(false);
         revision++;
         busy.set(false);
         status.set('Settings saved. Connection not checked.');
@@ -94,7 +103,12 @@ function init() {
           !health.capabilities || health.capabilities.dubbing !== false) {
           throw new Error('Unexpected companion response or unsupported API. Update both components.');
         }
-        status.set('Connected to local companion. Dubbing unavailable; no engines or player integration.');
+        var autoReady = !!(health.experiments && health.experiments.automaticClips === true);
+        autoAvailable.set(autoReady);
+        status.set('Connected to local companion. ' + (autoReady ?
+          'Automatic offline clip processing enabled.' :
+          'Automatic offline clip processing not enabled on the companion.') +
+          ' Full-episode AI dubbing is unavailable.');
       } catch (error) {
         // Do not surface network exception strings: these can contain request details.
         if (requestRevision === revision) {
@@ -150,6 +164,51 @@ function init() {
         qualityMessage.set(job.status === 'completed' ? 'Clip generated; listening review required. Open the output folder below.' :
           job.status === 'failed' ? 'Processing failed. Inspect the local job log.' : 'Still processing on this computer.');
       } catch (_) { qualityMessage.set('Could not refresh the result. Check the companion connection.'); }
+    });
+    ctx.registerEventHandler('ai-dub-auto-clips', async function () {
+      try {
+        var response = await qualityRequest('/auto/clips');
+        var names = response && Array.isArray(response.clips) ? response.clips.filter(function (n) {
+          return typeof n === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(n);
+        }) : [];
+        autoClips.set(names);
+        if (names.length) autoClipChoice.setValue(names[0]);
+        autoAvailable.set(true);
+        autoMessage.set(names.length ? 'Choose a prepared local clip. Speech will use the generic English voice.' :
+          'No local media clips found in the companion inbox.');
+      } catch (_) {
+        autoAvailable.set(false);
+        autoMessage.set('Automatic local clip mode unavailable. Start the companion with AI_DUB_AUDIO=1 and installed offline models.');
+      }
+    });
+    ctx.registerEventHandler('ai-dub-auto-start', async function () {
+      if (autoJob.get() && autoJob.get().status === 'running') return;
+      try {
+        if (!autoAvailable.get() || autoClips.get().indexOf(autoClipChoice.current) < 0) {
+          throw new Error('Select a prepared clip');
+        }
+        var job = await qualityRequest('/auto/jobs', { clip: autoClipChoice.current, start: 0, seconds: 20 });
+        if (!job || !/^[a-f0-9]{32}$/.test(job.id)) throw new Error('Invalid job');
+        autoJob.set(job);
+        autoMessage.set('Generating English dialogue locally. Refresh to check progress.');
+      } catch (_) {
+        autoMessage.set('Automatic clip failed to start. Check the Python models and local companion logs.');
+      }
+    });
+    ctx.registerEventHandler('ai-dub-auto-refresh', async function () {
+      var current = autoJob.get();
+      if (!current || !/^[a-f0-9]{32}$/.test(current.id)) {
+        autoMessage.set('No automatic clip job has been started.');
+        return;
+      }
+      try {
+        var result = await qualityRequest('/auto/jobs/' + current.id);
+        autoJob.set(result);
+        autoMessage.set(result.status === 'completed' ?
+          'English dialogue WAV generated. Review the translation and timing before use.' :
+          result.status === 'failed' ? 'Generation failed. Inspect the companion job log.' :
+          'Still processing locally. This is not real-time playback.');
+      } catch (_) { autoMessage.set('Could not refresh automatic clip job.'); }
     });
     ctx.registerEventHandler('ai-dub-denshi-probe', function () {
       try {
@@ -300,6 +359,27 @@ function init() {
             tray.button({ label: 'Refresh Status', onClick: 'ai-dub-refresh-status' }),
             tray.button({ label: 'Show Output Path', onClick: 'ai-dub-open-output' })
           )
+        ]),
+        card([
+          tray.flex([
+            heading('Automatic English Clip'),
+            tray.badge({ text: autoAvailable.get() ? 'Configured' : 'Opt-in setup', intent: autoAvailable.get() ? 'success' : 'gray', size: 'sm' })
+          ], { direction: 'row', gap: 2 }),
+          hint('Whisper translation + Piper speech. Processes a prepared local clip; not a full streaming episode.'),
+          hint(autoMessage.get()),
+          tray.button({ label: 'Load Local Clips', onClick: 'ai-dub-auto-clips' }),
+          tray.select({ label: 'Local Clip', fieldRef: autoClipChoice,
+            options: autoClips.get().map(function (name) { return { label: name, value: name }; }) }),
+          actions(
+            tray.button({ label: 'Generate English Clip', onClick: 'ai-dub-auto-start',
+              style: primaryButton, disabled: !saved.enabled || !saved.token || !autoAvailable.get() ||
+                autoClips.get().indexOf(autoClipChoice.current) < 0 ||
+                !!(autoJob.get() && autoJob.get().status === 'running') }),
+            tray.button({ label: 'Check Clip Progress', onClick: 'ai-dub-auto-refresh' })
+          ),
+          autoJob.get() && autoJob.get().status === 'completed' ?
+            hint('Output folder: ' + String(autoJob.get().output || '')) :
+            hint('Original player audio is never altered.')
         ]),
         card([
           heading('Quality Clip Experiments'),
