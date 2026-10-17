@@ -132,11 +132,11 @@ test('Denshi probe is explicit and does not alter player audio', () => {
   assert.equal(selections, 0);
   ui.events['ai-dub-denshi-probe']();
   assert.equal(selections, 0);
-  assert.match(ui.states[5].get(), /Denshi playback API detected/);
+  assert.match(ui.states[5].get(), /VideoCore exposed/);
   assert.match(ui.states[6].get(), /External audio insertion/);
 });
 test('Denshi probe handles unavailable built-in player API', () => {
   const ui = load();
   ui.events['ai-dub-denshi-probe']();
-  assert.match(ui.states[5].get(), /unavailable/);
+  assert.match(ui.states[5].get(), /not exposed/);
 });
