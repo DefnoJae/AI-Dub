@@ -150,7 +150,7 @@ function init() {
     tray.render(function () {
       return tray.stack([
         tray.text('AI Dub — local companion'),
-        tray.text('Prototype only. No audio dubbing or playback changes.'),
+        tray.text('Short-clip experiments only. Automatic playback dubbing is unavailable.'),
         tray.text(status.get()),
         tray.switch({ label: 'Allow local status checks', fieldRef: enabled }),
         tray.input({ label: 'Companion URL', fieldRef: endpoint }),

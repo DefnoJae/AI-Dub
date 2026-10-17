@@ -21,8 +21,14 @@ PyAV's HLS reader needed extension_picky=0 for Seanime's extensionless proxy seg
 
 The initial tests with Anime Nexus, AniZone and Animeya had stayed at “Loading stream”; that did not establish that all Seanime providers were unusable. Miruro supplied the source needed to complete the processing test. The earlier English voice smoke test remains separate from this real source test.
 
+## Reference-voice quality experiment (0.3.x)
+
+Installed Chatterbox Multilingual and Audio Separator in a separate Python 3.12 CPU environment. The AMD RX 6550M is not used for acceleration. A private 16-second comparison clip completed in about 160 seconds on the first run, with two explicit speaker references and four English utterances. UVR-MDX-NET-Inst_HQ_3 separated a stereo background track; the runner mixed generated dialogue back over it and copied the original video stream to a preview MP4.
+
+English text was transcribed from the user's ElevenLabs comparison to isolate synthesis/mixing differences. This is not an independent translation benchmark. Local Whisper readback recovered all intended English words. Numerical verification confirmed the exported WAV contains the background plus dialogue within 16-bit quantization tolerance (maximum difference approximately 0.000031). These checks do not establish actor resemblance, performance quality, or perfect sound-effect retention.
+
+Eight Node tests and six Python tests cover authentication, settings, job confinement/concurrency, completion reporting, script validation, audio scheduling and mixing. The opt-in quality job endpoints use prepared local inbox files. Automatic processing capabilities remain false; an experimental health field separately identifies the prepared-clip workflow.
+
 ## Not demonstrated
 
-No live player audio attachment, synchronization, background mixing, speaker preservation, or HTTP processing job has been demonstrated. The original companion's health response continues to report its processing capabilities as false, because the separate CLI is not exposed through it.
-
-Next integration test: review the generated audio and report against the Japanese source and reference subtitles, then prototype explicit player attachment and pause/seek synchronization separately. Do not promote capabilities based on code presence alone.
+No live player audio attachment, pause/seek synchronization, automatic episode dubbing, automatic speaker assignment, or human-approved voice resemblance has been demonstrated. Listening review is still required. Separation may retain source speech or remove effects.

@@ -2,7 +2,7 @@
   "name": "ai-dub-companion",
   "version": "0.3.0",
   "private": true,
-  "description": "Local AI Dub companion prototype; no dubbing engine yet",
+  "description": "Local AI Dub companion with optional prepared quality clip jobs",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node companion/server.cjs",
