@@ -10,7 +10,7 @@ Install this manifest from Seanime Extensions:
 
 `https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json`
 
-## Experimental episode dubbing in Seanime (0.5.1)
+## Experimental episode dubbing in Seanime (0.5.2)
 
 AI-Dub can now read the currently playing episode from Seanime's `videoCore.getCurrentPlaybackInfo()` and, **only after you request it**, ask the companion to process the accessible Japanese media source. Offline Whisper translates speech; local Kokoro ONNX (recommended) or Piper (fallback) generates English; FFmpeg packages one video with **two embedded audio streams** (Japanese original and English AI Dub). The generated English track is selected by default. Select **Play Dubbed Episode** to reopen it using Seanime's documented `videoCore.playStream()`.
 
@@ -24,7 +24,8 @@ AI-Dub can now read the currently playing episode from Seanime's `videoCore.getC
 2. Stop the **existing** companion with Ctrl+C. Do not delete or regenerate `.ai-dub/pairing-token`.
 3. Install the natural-voice engine and better Whisper-small model once with `.\Start-Audio.ps1 -SetupHighQuality`. This action explicitly downloads model files and dependencies; inference afterwards remains offline. Use `.\Start-Audio.ps1 -Setup` if you want the Piper fallback instead.
 4. Start the updated companion with `.\Start-Audio.ps1`. It enables the episode engine. Kokoro is selected if correctly installed, otherwise Piper.
-5. Play an anime episode in Seanime. Open AI-Dub, enable its **session** switch, click **Check Connection**, then **Detect Playback** and **Prepare Current Episode**.
+   The previous companion must be stopped before this new process can bind port 43123. The terminal should say **Experimental local episode generation with playable two-audio MP4 enabled**. If it says **Automatic local short-clip translation enabled** but no full-episode support, you are running an older launcher or process.
+5. Play an anime episode in Seanime. Open AI-Dub, enable its **session** switch, click **Check Connection** (or **Recheck Episode Engine**), then **Detect Playback** and **Prepare Current Episode**. If Episode Tools says **Update companion** while Automatic English Clip says **Configured**, the running companion supports clips only: stop it, update/start the new version, and recheck. This does not require another pairing token.
 6. Keep the source stream available until capture finishes. Use **Refresh Status** to see the current stage. After rendering completes, choose **Play Dubbed Episode** to load the version with embedded AI audio into Seanime. The English track is the default; original Japanese remains embedded.
 
 Seanime's normal local backend is `http://127.0.0.1:43211`. If you changed its port, set `$env:AI_DUB_SEANIME_URL="http://127.0.0.1:PORT"` before launching Start-Audio.ps1. This resolves playback URLs with `{{SERVER_URL}}` placeholders. Signed provider streams may expire or block FFmpeg; protected/DRM content is not bypassed.
