@@ -10,9 +10,11 @@ Install this manifest from Seanime Extensions:
 
 `https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json`
 
-## Experimental episode dubbing in Seanime (0.5.0)
+## Experimental episode dubbing in Seanime (0.5.1)
 
 AI-Dub can now read the currently playing episode from Seanime's `videoCore.getCurrentPlaybackInfo()` and, **only after you request it**, ask the companion to process the accessible Japanese media source. Offline Whisper translates speech; local Kokoro ONNX (recommended) or Piper (fallback) generates English; FFmpeg packages one video with **two embedded audio streams** (Japanese original and English AI Dub). The generated English track is selected by default. Select **Play Dubbed Episode** to reopen it using Seanime's documented `videoCore.playStream()`.
+
+**0.5.1 playback compatibility:** English is now the **first audio track** of the generated MP4, as well as the default. This helps Denshi's web renderer, which may play the first audio track but not expose the MP4 audio selection menu. The Japanese original is still embedded as the second stream for mpv/native players with audio selection. A successful render removes large temporary files; the Windows launcher checks FFmpeg dependencies before starting.
 
 **This is not instantaneous/live dubbing and does not inject a stream into an already-playing video.** It prepares a separate video and changes playback only when requested. Native/mpv renderers normally support multiple embedded audio tracks; the web renderer's manual track menu may vary. CPU processing of a full episode can be slow. Sound quality and translations still need listening review.
 
