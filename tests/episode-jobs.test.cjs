@@ -70,7 +70,7 @@ test('authenticated episode start, final report verification and private range p
     body: JSON.stringify({ playbackId: 'another', source: { type: 'file', value: file } }) })).status, 409);
   const directory = started[0].args[started[0].args.indexOf('--output') + 1];
   fs.mkdirSync(directory);
-  fs.writeFileSync(path.join(directory, 'episode-report.json'), '{}');
+  fs.writeFileSync(path.join(directory, 'episode-report.json'), '{"status":"generated-unreviewed"}');
   fs.writeFileSync(path.join(directory, 'english-ai-dub.mp4'), Buffer.alloc(5000, 23));
   started[0].child.emit('close', 0);
   const ready = await (await fetch(base + '/episodes/' + job.id, { headers })).json();
@@ -78,10 +78,14 @@ test('authenticated episode start, final report verification and private range p
   assert.match(ready.playbackUrl, /^http:\/\/127\.0\.0\.1:49001\/play\/[a-f0-9]{64}$/);
   const pathname = new URL(ready.playbackUrl).pathname;
   assert.equal((await fetch(base + '/play/' + 'a'.repeat(64))).status, 404);
-  const video = await fetch(base + pathname, { headers: { Range: 'bytes=3-9' } });
+  const video = await fetch(base + pathname, { headers: { Range: 'bytes=3-9', Origin: 'app://-' } });
   assert.equal(video.status, 206);
   assert.equal(video.headers.get('Content-Range'), 'bytes 3-9/5000');
   assert.equal((await video.arrayBuffer()).byteLength, 7);
+  assert.equal((await fetch(base + '/health', { headers: { ...headers, Origin: 'app://-' } })).status, 403);
+  assert.equal((await fetch(base + '/episodes', { method: 'POST', headers: { ...headers, Origin: 'app://-' },
+    body: '{}' })).status, 403);
+  assert.equal((await fetch(base + pathname, { method: 'POST', headers: { Origin: 'app://-' } })).status, 405);
   const suffix = await fetch(base + pathname, { headers: { Range: 'bytes=-6' } });
   assert.equal(suffix.status, 206);
   assert.equal(suffix.headers.get('Content-Range'), 'bytes 4994-4999/5000');
@@ -95,6 +99,20 @@ test('authenticated episode start, final report verification and private range p
     body: JSON.stringify({ playbackId, source: { type: 'file', value: file } }) });
   assert.equal(reused.status, 200);
   assert.equal((await reused.json()).id, job.id);
+  const restored = createEpisodeJobs({ root, dataDir: root, python: 'python',
+    model: '/model', voice: '/voice', port, launch });
+  const restarted = createServer({ token, episodeJobs: restored });
+  await new Promise(resolve => restarted.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => restarted.close(resolve)));
+  const restoredBase = 'http://127.0.0.1:' + restarted.address().port;
+  const recovered = await (await fetch(restoredBase + '/episodes/' + job.id, { headers })).json();
+  assert.equal(recovered.status, 'completed');
+  assert.notEqual(recovered.playbackUrl, ready.playbackUrl, 'restart rotates private playback capability');
+  assert.equal((await fetch(restoredBase + pathname)).status, 404);
+  const recoveredMedia = await fetch(restoredBase + new URL(recovered.playbackUrl).pathname,
+    { headers: { Range: 'bytes=0-9', Origin: 'app://-' } });
+  assert.equal(recoveredMedia.status, 206);
+  assert.equal((await recoveredMedia.arrayBuffer()).byteLength, 10);
 });
 
 test('failed process never exposes video and can be followed by retry', async t => {

@@ -34,7 +34,9 @@ Output lives at `.ai-dub/episode-jobs/<job-id>/english-ai-dub.mp4` with `episode
 
 The companion serves completed MP4 files from a loopback-only, 256-bit unguessable playback URL with HTTP byte-range support for Seanime's media reader. Job-control endpoints still require the existing pairing token. Never post the playback URLs publicly.
 
-Automated tests verify HTTP auth, source validation, job states, mock Seanime player handoff and a real FFmpeg-generated two-audio-track MP4. An end-to-end episode test on Denshi has **not** been performed remotely. Full compatibility with every provider and renderer is therefore not yet verified.
+Automated tests verify HTTP auth, source validation, job states, mock Seanime player handoff and a real FFmpeg-generated two-audio-track MP4. A hands-on Windows Denshi test on 2026-10-17 captured a 750-second subtitled torrent episode, translated and synthesized 303 English segments, rendered it in 115 seconds, and opened the rendered MP4 in Denshi's mini-player with advancing video playback. The file contains English as the first/default audio stream and Japanese as the second. Listening quality, manual audio-track switching, and compatibility with every provider and renderer still need verification. An online source that exposed video without audio failed capture.
+
+Playback requests may carry the player's forwarded Origin header; only read-only private playback URLs accept it. Browser-origin job control remains blocked. Completed renders can be recovered after a companion restart, with fresh private playback URLs. The paired token stays unchanged. Audio setup pins PyAV 18.1.0 because faster-whisper 1.2.1 uses an API removed in PyAV 19.
 
 ## Architecture plan
 

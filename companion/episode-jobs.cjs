@@ -53,6 +53,27 @@ function createEpisodeJobs({ root, dataDir, python, model, voice, tts = 'piper',
   const access = new Map();
   let active = null;
 
+  // Completed renders survive a companion upgrade; playback capabilities are
+  // freshly generated and never written to the report or reused across restarts.
+  for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+    if (jobs.size >= 40) break;
+    if (!entry.isDirectory() || !/^[a-f0-9]{32}$/.test(entry.name)) continue;
+    const output = path.join(folder, entry.name);
+    try {
+      const report = JSON.parse(fs.readFileSync(path.join(output, 'episode-report.json'), 'utf8'));
+      if (report.status !== 'generated-unreviewed') continue;
+      const playbackFile = path.join(output, 'english-ai-dub.mp4');
+      const stat = fs.lstatSync(playbackFile);
+      if (!stat.isFile() || stat.size <= 1000) continue;
+      const key = crypto.randomBytes(32).toString('hex');
+      const job = { id: entry.name, playbackId: 'restored-' + entry.name,
+        status: 'completed', stage: 'Dubbed episode ready; Japanese and English tracks available',
+        output, playbackFile, playbackUrl: 'http://127.0.0.1:' + port + '/play/' + key };
+      jobs.set(job.id, job);
+      access.set(key, job);
+    } catch { /* Incomplete or invalid jobs are never exposed for playback. */ }
+  }
+
   const present = job => ({
     id: job.id, status: job.status, stage: job.stage,
     playbackId: job.playbackId,

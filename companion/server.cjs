@@ -21,12 +21,16 @@ function createServer({ token, qualityJobs = null, autoJobs = null, episodeJobs 
     };
     // No browser origins or CORS: the Seanime server makes authenticated requests.
     // Validate Host as well as binding loopback to reject DNS rebinding.
-    if (!/^127\.0\.0\.1:\d+$/.test(req.headers.host || '') || req.headers.origin) {
+    if (!/^127\.0\.0\.1:\d+$/.test(req.headers.host || '')) {
       return send(403, { error: 'Loopback server-to-server requests only' });
     }
     // Playback URLs carry an unguessable capability instead of a credential header.
     // MediaCore accesses these URLs through its local HTTP reader (GET/HEAD/Range).
     if (episodeJobs && episodeJobs.serve(req, res)) return;
+    // Seanime's media proxy forwards the player's Origin header. The private
+    // read-only playback capability is allowed above; job control still rejects
+    // browser-origin requests and requires the pairing credential below.
+    if (req.headers.origin) return send(403, { error: 'Loopback server-to-server requests only' });
     const auth = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from('Bearer ' + token);
     if (auth.length !== expected.length || !crypto.timingSafeEqual(auth, expected)) {
