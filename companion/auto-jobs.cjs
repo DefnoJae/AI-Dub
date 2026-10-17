@@ -10,8 +10,8 @@ const { spawn } = require('node:child_process');
 const FILE_RE = /^([a-zA-Z0-9_-]{1,64})\.(mp4|mkv|webm|mov)$/i;
 const CLIP_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
-function createAutoJobs({ root, dataDir, python, launch = spawn }) {
-  if (!root || !dataDir || !python) throw new Error('root, dataDir and python are required');
+function createAutoJobs({ root, dataDir, python, model, voice, launch = spawn }) {
+  if (!root || !dataDir || !python || !model || !voice) throw new Error('root, dataDir, python, model and voice are required');
   const inbox = path.resolve(dataDir, 'inbox');
   const jobsDir = path.resolve(dataDir, 'auto-jobs');
   fs.mkdirSync(inbox, { recursive: true });
@@ -94,7 +94,8 @@ function createAutoJobs({ root, dataDir, python, launch = spawn }) {
         const job = { id, clip, output, status: 'running',
           message: 'Offline transcription, translation and synthesis in progress.' };
         const args = [path.join(root, 'companion', 'dub_clip.py'), source,
-          '--start', String(start), '--seconds', String(seconds), '--output', output];
+          '--start', String(start), '--seconds', String(seconds), '--output', output,
+          '--model', path.resolve(model), '--voice', path.resolve(voice)];
         const child = launch(python, args, {
           cwd: root, shell: false, windowsHide: true,
           env: { ...process.env, HF_HUB_OFFLINE: '1' },
