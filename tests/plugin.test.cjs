@@ -9,7 +9,7 @@ const code = fs.readFileSync(path.join(__dirname, '../code.js'), 'utf8');
 test('manifest grants the loopback network access required by ctx.fetch', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../Manifest.json'), 'utf8'));
   assert.deepEqual(manifest.plugin.permissions.allow.networkAccess.allowedDomains, ['http://127.0.0.1']);
-  assert.deepEqual(manifest.plugin.permissions.scopes, ['storage']);
+  assert.deepEqual(manifest.plugin.permissions.scopes, ['storage', 'playback']);
 });
 
 function load(store = {}, fetcher = fetch, videoCore = undefined) {
@@ -125,6 +125,7 @@ test('Denshi probe is explicit and does not alter player audio', () => {
   let selections = 0;
   const videoCore = {
     getPlaybackStatus() { return { playing: true }; },
+    getCurrentPlayerType() { return 'native'; },
     getCurrentPlaybackInfo() { return { episode: 1 }; },
     setAudioTrack() { selections++; }
   };
@@ -132,13 +133,14 @@ test('Denshi probe is explicit and does not alter player audio', () => {
   assert.equal(selections, 0);
   ui.events['ai-dub-denshi-probe']();
   assert.equal(selections, 0);
-  assert.match(ui.states[5].get(), /VideoCore exposed/);
-  assert.match(ui.states[6].get(), /External audio insertion/);
+  assert.match(ui.states[5].get(), /Denshi player detected/);
+  assert.match(ui.states[6].get(), /Adding external AI audio tracks is not supported/);
 });
 test('Denshi probe handles unavailable built-in player API', () => {
   const ui = load();
   ui.events['ai-dub-denshi-probe']();
-  assert.match(ui.states[5].get(), /not exposed/);
+  assert.match(ui.states[5].get(), /Playback API unavailable/);
+  assert.match(ui.states[6].get(), /Grant the Playback permission/);
 });
 
 test('redesigned tray actions are wired and never pretend unsupported dubbing works', async () => {
@@ -211,4 +213,15 @@ test('clip generation remains disabled until a saved connection and clip are ava
   assert.equal(findGenerate(authenticated.rows).disabled, true, 'no clips available');
   await authenticated.events['ai-dub-clips']();
   assert.equal(findGenerate(authenticated.render()).disabled, false, 'one valid clip loaded');
+});
+
+test('player detection distinguishes missing playback from a web renderer', () => {
+  const inactive = load({}, fetch, { getCurrentPlayerType() { return ''; },
+    getPlaybackStatus() { return null; } });
+  inactive.events['ai-dub-denshi-probe']();
+  assert.match(inactive.states[5].get(), /No active episode detected/);
+  const web = load({}, fetch, { getCurrentPlayerType() { return 'web'; },
+    getPlaybackStatus() { return { playing: true }; } });
+  web.events['ai-dub-denshi-probe']();
+  assert.match(web.states[5].get(), /Player detected: web/);
 });
