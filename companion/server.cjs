@@ -8,7 +8,7 @@ const VERSION = '0.4.1';
 const CAPABILITIES = Object.freeze({ dubbing: false, transcription: false,
   translation: false, synthesis: false, playerIntegration: false, cloud: false });
 
-function createServer({ token, qualityJobs = null, autoJobs = null }) {
+function createServer({ token, qualityJobs = null, autoJobs = null, episodeJobs = null }) {
   if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
     throw new Error('A 32-byte hex pairing token is required');
   }
@@ -24,6 +24,9 @@ function createServer({ token, qualityJobs = null, autoJobs = null }) {
     if (!/^127\.0\.0\.1:\d+$/.test(req.headers.host || '') || req.headers.origin) {
       return send(403, { error: 'Loopback server-to-server requests only' });
     }
+    // Playback URLs carry an unguessable capability instead of a credential header.
+    // MediaCore accesses these URLs through its local HTTP reader (GET/HEAD/Range).
+    if (episodeJobs && episodeJobs.serve(req, res)) return;
     const auth = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from('Bearer ' + token);
     if (auth.length !== expected.length || !crypto.timingSafeEqual(auth, expected)) {
@@ -33,11 +36,14 @@ function createServer({ token, qualityJobs = null, autoJobs = null }) {
       return send(200, { service: 'ai-dub-companion', apiVersion: 1, version: VERSION,
         status: 'prototype', ready: false, mode: 'local', cloudEnabled: false,
         capabilities: { ...CAPABILITIES, transcription: autoJobs !== null, translation: autoJobs !== null, synthesis: autoJobs !== null },
-        experiments: { qualityClips: qualityJobs !== null, automaticClips: autoJobs !== null },
-        message: 'Connected. Dubbing engines and player integration are not implemented.' });
+        experiments: { qualityClips: qualityJobs !== null, automaticClips: autoJobs !== null,
+          fullEpisodePlayback: episodeJobs !== null },
+        message: episodeJobs ? 'Experimental offline episode rendering is enabled; use playStream when ready.' :
+          'Connected. Full-episode processing and player playback are unavailable.' });
     }
     if (qualityJobs && qualityJobs.handle(req, send)) return;
     if (autoJobs && autoJobs.handle(req, send)) return;
+    if (episodeJobs && episodeJobs.handle(req, send)) return;
     if (req.url === '/jobs' && req.method === 'POST') {
       return send(501, { error: 'Dubbing jobs are not implemented', code: 'ENGINE_UNAVAILABLE' });
     }
@@ -67,6 +73,7 @@ if (require.main === module) {
     const { token, file } = loadToken(dataDir);
     let qualityJobs = null;
     let autoJobs = null;
+    let episodeJobs = null;
     if (process.env.AI_DUB_QUALITY === '1') {
       const python = path.resolve(process.env.AI_DUB_QUALITY_PYTHON || path.join('.venv-quality', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
       if (!fs.existsSync(python)) throw new Error('Quality Python environment is missing');
@@ -84,7 +91,21 @@ if (require.main === module) {
         root: process.cwd(), dataDir, python, model: whisper, voice
       });
     }
-    const server = createServer({ token, qualityJobs, autoJobs });
+    if (process.env.AI_DUB_EPISODES === '1') {
+      if (process.env.AI_DUB_AUDIO !== '1') throw new Error('Full episode playback needs AI_DUB_AUDIO=1');
+      const python = path.resolve(process.env.AI_DUB_AUDIO_PYTHON ||
+        path.join('.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
+      const model = path.join(dataDir, 'models', 'whisper-base');
+      const voice = path.join(dataDir, 'models', 'piper', 'en_US-lessac-medium.onnx');
+      if (!fs.existsSync(python) || !fs.existsSync(model) || !fs.existsSync(voice)) {
+        throw new Error('Episode dubbing models or Python environment missing');
+      }
+      episodeJobs = require('./episode-jobs.cjs').createEpisodeJobs({
+        root: process.cwd(), dataDir, python, model, voice, port,
+        seanimeBaseUrl: process.env.AI_DUB_SEANIME_URL || 'http://127.0.0.1:43211'
+      });
+    }
+    const server = createServer({ token, qualityJobs, autoJobs, episodeJobs });
     server.requestTimeout = 5000;
     server.headersTimeout = 5000;
     server.on('error', error => { console.error('Companion startup failed:', error.message); process.exitCode = 1; });
@@ -93,7 +114,9 @@ if (require.main === module) {
       console.log(`Copy the token from ${file} into the Seanime AI Dub panel.`);
       console.log(qualityJobs ? 'Local quality clip jobs enabled.' : 'Reference-voice quality mode disabled.');
       console.log(autoJobs ? 'Automatic local short-clip translation enabled. Player audio unchanged.' : 'Automatic local clip mode disabled (AI_DUB_AUDIO=1).');
-      console.log('No cloud uploads or automatic player control.');
+      console.log(episodeJobs ? 'Experimental local episode generation with playable two-audio MP4 enabled.' :
+        'Full-episode rendering disabled (AI_DUB_EPISODES=1).');
+      console.log('No cloud uploads. Playback only changes when explicitly requested in Seanime.');
     });
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());
   } catch (error) {
