@@ -1,3 +1,5 @@
 faster-whisper==1.2.1
+# PyAV 19 removed metadata_errors, still used by faster-whisper 1.2.1.
+av==18.1.0
 piper-tts==1.8.0
 imageio-ffmpeg==0.6.0

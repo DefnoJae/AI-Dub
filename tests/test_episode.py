@@ -43,6 +43,18 @@ class FakeKokoro:
 
 
 class TestEpisodeVoice(unittest.TestCase):
+    def test_whisper_decoder_accepts_installed_pyav(self):
+        from faster_whisper.audio import decode_audio
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'speech.wav'
+            with wave.open(str(source), 'wb') as writer:
+                writer.setnchannels(1)
+                writer.setsampwidth(2)
+                writer.setframerate(16000)
+                writer.writeframes(b'\0\0' * 16000)
+            audio = decode_audio(str(source))
+            self.assertEqual(len(audio), 16000)
+
     def test_episode_timing_is_padded_and_no_overlaps(self):
         with tempfile.TemporaryDirectory() as tmp:
             pcm, rate, lines = synthesize(
