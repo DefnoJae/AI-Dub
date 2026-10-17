@@ -2,13 +2,36 @@
 
 Local-first AI dubbing companion for Seanime, with optional opt-in cloud acceleration.
 
-> **Status: settings/status companion plus an experimental offline clip processor.** A short Japanese-to-English processing test completed using a Miruro source resolved by Seanime. Its translation and voice quality remain unreviewed. Seanime audio replacement is not implemented.
+> **Status: experimental offline full-episode dubbing and in-Seanime playback bridge.** Automated tests verify embedded Japanese and English tracks and the player API handoff; actual Denshi playback, dubbing quality and translation still require real-world verification. No instant live track injection.
 
 ## Installation
 
 Install this manifest from Seanime Extensions:
 
 `https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json`
+
+## Experimental episode dubbing in Seanime (0.5.0)
+
+AI-Dub can now read the currently playing episode from Seanime's `videoCore.getCurrentPlaybackInfo()` and, **only after you request it**, ask the companion to process the accessible Japanese media source. Offline Whisper translates speech; local Kokoro ONNX (recommended) or Piper (fallback) generates English; FFmpeg packages one video with **two embedded audio streams** (Japanese original and English AI Dub). The generated English track is selected by default. Select **Play Dubbed Episode** to reopen it using Seanime's documented `videoCore.playStream()`.
+
+**This is not instantaneous/live dubbing and does not inject a stream into an already-playing video.** It prepares a separate video and changes playback only when requested. Native/mpv renderers normally support multiple embedded audio tracks; the web renderer's manual track menu may vary. CPU processing of a full episode can be slow. Sound quality and translations still need listening review.
+
+### Windows upgrade (preserves your token)
+
+1. From the AI-Dub checkout, run `git pull` and update/reload AI-Dub from its manifest in Seanime.
+2. Stop the **existing** companion with Ctrl+C. Do not delete or regenerate `.ai-dub/pairing-token`.
+3. Install the natural-voice engine and better Whisper-small model once with `.\Start-Audio.ps1 -SetupHighQuality`. This action explicitly downloads model files and dependencies; inference afterwards remains offline. Use `.\Start-Audio.ps1 -Setup` if you want the Piper fallback instead.
+4. Start the updated companion with `.\Start-Audio.ps1`. It enables the episode engine. Kokoro is selected if correctly installed, otherwise Piper.
+5. Play an anime episode in Seanime. Open AI-Dub, enable its **session** switch, click **Check Connection**, then **Detect Playback** and **Prepare Current Episode**.
+6. Keep the source stream available until capture finishes. Use **Refresh Status** to see the current stage. After rendering completes, choose **Play Dubbed Episode** to load the version with embedded AI audio into Seanime. The English track is the default; original Japanese remains embedded.
+
+Seanime's normal local backend is `http://127.0.0.1:43211`. If you changed its port, set `$env:AI_DUB_SEANIME_URL="http://127.0.0.1:PORT"` before launching Start-Audio.ps1. This resolves playback URLs with `{{SERVER_URL}}` placeholders. Signed provider streams may expire or block FFmpeg; protected/DRM content is not bypassed.
+
+Output lives at `.ai-dub/episode-jobs/<job-id>/english-ai-dub.mp4` with `episode-report.json`. The Japanese speech is **quieted, not cleanly removed**, so it may bleed through the English mix. Kokoro uses a more expressive **generic voice**, not character-specific voices. Translation, performance and lip sync are not production quality. Capturing and preparing full episodes consumes disk space; only use sources you have the rights to process.
+
+The companion serves completed MP4 files from a loopback-only, 256-bit unguessable playback URL with HTTP byte-range support for Seanime's media reader. Job-control endpoints still require the existing pairing token. Never post the playback URLs publicly.
+
+Automated tests verify HTTP auth, source validation, job states, mock Seanime player handoff and a real FFmpeg-generated two-audio-track MP4. An end-to-end episode test on Denshi has **not** been performed remotely. Full compatibility with every provider and renderer is therefore not yet verified.
 
 ## Architecture plan
 
