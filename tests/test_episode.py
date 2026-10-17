@@ -13,7 +13,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent.parent / "companion"
 sys.path.insert(0, str(HERE))
-from episode_dub import synthesize, validate_source, ffmpeg_binary, package_episode, run
+from episode_dub import synthesize, validate_source, ffmpeg_binary, package_episode, run, command
 from voice_engine import KokoroVoice
 
 
@@ -138,6 +138,14 @@ class TestEpisodeVoice(unittest.TestCase):
             with av.open(str(output / "english-ai-dub.mp4")) as ready:
                 self.assertEqual(len(ready.streams.audio), 2)
                 self.assertEqual(ready.streams.audio[0].metadata.get("language"), "eng")
+
+    def test_failed_media_command_does_not_expose_signed_source(self):
+        url = "https://example.org/movie.mp4?auth=do-not-print-me"
+        with self.assertRaises(RuntimeError) as raised:
+            command([sys.executable, "-c", "import sys; sys.exit(3)", url],
+                    "Capture media")
+        self.assertIn("exit 3", str(raised.exception))
+        self.assertNotIn("do-not-print-me", str(raised.exception))
 
     def test_local_media_paths_require_real_files(self):
         with tempfile.TemporaryDirectory() as tmp:
