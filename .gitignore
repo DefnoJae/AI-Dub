@@ -1,3 +1,6 @@
 node_modules/
 .ai-dub/
 *.log
+.venv/
+__pycache__/
+*.pyc
