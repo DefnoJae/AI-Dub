@@ -327,3 +327,32 @@ test('episode preparation explains companion job conflicts without leaking reque
   assert.match(ui.states[7].get(), /already rendering/);
   assert.doesNotMatch(ui.states[7].get(), /a{64}/);
 });
+
+test('short-clip-only companion reports the upgrade action instead of unexplained episode setup', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const ui = load(store, async () => ({ ok: true, json: async () => ({
+    service: 'ai-dub-companion', apiVersion: 1, version: '0.4.1',
+    ready: false, mode: 'local', cloudEnabled: false,
+    capabilities: { dubbing: false }, experiments: { automaticClips: true, fullEpisodePlayback: false }
+  }) }));
+  await ui.check();
+  assert.match(ui.states[15].get(), /v0\.4\.1 supports short clips but not full episodes/);
+  assert.match(ui.states[15].get(), /Start-Audio\.ps1/);
+  assert.equal(ui.states[9].get(), false);
+  assert.equal(ui.states[14].get(), true);
+  const tree = JSON.stringify(ui.render());
+  assert.match(tree, /Update companion/);
+  assert.match(tree, /Ctrl\+C/);
+});
+
+test('full episode companion version is shown as ready only when health capability says so', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:43123', token: 'a'.repeat(64) } };
+  const ui = load(store, async () => ({ ok: true, json: async () => ({
+    service: 'ai-dub-companion', apiVersion: 1, version: '0.5.1',
+    ready: false, mode: 'local', cloudEnabled: false,
+    capabilities: { dubbing: false }, experiments: { automaticClips: true, fullEpisodePlayback: true }
+  }) }));
+  await ui.check();
+  assert.equal(ui.states[9].get(), true);
+  assert.match(ui.states[15].get(), /v0\.5\.1: full-episode engine ready/);
+});
