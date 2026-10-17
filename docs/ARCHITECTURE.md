@@ -14,12 +14,12 @@ Authorized source media -> extract audio -> transcribe Japanese -> translate -> 
 - Cloud mode is opt-in, with clear privacy and cost disclosures; no implicit uploads.
 - Do not imitate identifiable actors' voices without authorization.
 
-## Proposed companion endpoints (not implemented)
+## Companion endpoints
 
-- `GET /health` -> version and readiness
-- `POST /jobs` -> enqueue an authorized source for processing
+- `GET /health` -> implemented: authenticated version, capabilities, and readiness (false)
+- `POST /jobs` -> implemented rejection: 501 ENGINE_UNAVAILABLE; accepts no media
 - `GET /jobs/{id}` -> progress and errors
 - `GET /jobs/{id}/segments` -> timestamps and locally cached English audio references
 - `DELETE /jobs/{id}` -> cancel and optionally clear cache
 
-All endpoint shapes are proposals and may change after player API research.
+The job lookup, segments and cancellation endpoints remain proposals and currently return 404. The dependency-free Node companion is a control-plane prototype; choose processing workers and models only after evaluating an authorized clip. Cloud acceleration remains unavailable and will require explicit consent in a later increment.

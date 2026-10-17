@@ -2,7 +2,7 @@
 
 Local-first AI dubbing companion for Seanime, with optional opt-in cloud acceleration.
 
-> **Status: architecture scaffold, not a working dubber.** This repository does not currently translate audio, synthesize speech, or replace Seanime playback audio.
+> **Status: settings/status and local companion prototype, not a working dubber.** This repository does not currently translate audio, synthesize speech, or replace Seanime playback audio.
 
 ## Installation
 
@@ -12,7 +12,7 @@ Install this manifest from Seanime Extensions:
 
 ## Architecture plan
 
-- **Seanime plugin (`code.js`)**: entrypoint and future UI integration; Seanime uses a sandboxed JS runtime, not Node.js.
+- **Seanime plugin (`code.js`)**: saved settings and manual companion health check; Seanime uses a sandboxed JS runtime, not Node.js.
 - **Local companion service (prototype)**: dependency-free Node.js service on authenticated loopback. Health/status only; processing engines and caching are future work.
 - **Offline processing (future)**: speech recognition, Japanese-to-English translation, speaker segmentation, English TTS, dialogue/background separation and timed mixing.
 - **Cloud acceleration (future)**: disabled by default, explicit consent and provider selection; never upload source audio automatically.
@@ -41,3 +41,9 @@ Seanime and the companion must run on the same machine. In containers, loopback 
 `GET /health` requires `Authorization: Bearer <pairing-token>` and reports service/API versions and unavailable capabilities. `POST /jobs` returns 501 (`ENGINE_UNAVAILABLE`); no media is accepted, read, or uploaded. Browser-origin requests are rejected; the plugin uses Seanime's server-side fetch. There is no cloud provider or billing code.
 
 Run `npm test` for local HTTP/authentication and token lifecycle tests.
+
+## Seanime settings/status panel (0.2.0)
+
+Update/reload the extension using the manifest above and approve its new **storage** permission. Open the blue waveform tray icon. Paste the companion token, enable **Allow local status checks**, and click **Save settings**, then **Check saved connection**. The token is visible in this panel and persisted in Seanime's plugin storage, not an OS credential vault. **Forget token / disable checks** clears the plugin's saved credential; to revoke all copies, stop the companion, delete its pairing-token file and restart to generate a new one.
+
+Only saved settings are used for checks. No connection is attempted automatically. The default is local checks disabled, and cloud mode is unavailable. A successful check says **Connected** and **Dubbing unavailable**. An unreachable service, bad token, or incompatible API produces a separate error message. This release's UI still needs verification in a real Seanime session; automated UI tests use mocks. See [player/API review](docs/PLAYER-API-REVIEW.md) for the research and test boundary.
