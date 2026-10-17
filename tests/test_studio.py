@@ -13,6 +13,24 @@ from studio import pipeline
 
 
 class StudioTests(unittest.TestCase):
+    def test_open_preview_gets_a_new_filename_instead_of_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder=Path(temp)
+            target=folder/'AI-Dub-English.mp4'
+            target.write_bytes(b'old preview')
+            real_replace=Path.replace
+            def locked_replace(source,destination):
+                if Path(destination)==target:
+                    raise PermissionError('video is open')
+                return real_replace(source,destination)
+            def fake_ffmpeg(argv,**kwargs):
+                Path(argv[-1]).write_bytes(b'new preview')
+            with patch.object(Path,'replace',locked_replace),patch.object(pipeline.subprocess,'run',fake_ffmpeg):
+                result=pipeline.media('ffmpeg',[],target)
+            self.assertNotEqual(result,target)
+            self.assertEqual(target.read_bytes(),b'old preview')
+            self.assertEqual(result.read_bytes(),b'new preview')
+
     def test_speaker_consistency_and_invalid_embedding(self):
         self.assertEqual(pipeline.cluster([[1, 0], [0, 1], [.99, .01], [.01, .99]]),
                          ['speaker-01', 'speaker-02', 'speaker-01', 'speaker-02'])
@@ -125,10 +143,10 @@ class StudioTests(unittest.TestCase):
             with sf.SoundFile(project / 'english-mix.wav') as audio:
                 audio.seek(10 * 44100)
                 np.testing.assert_allclose(audio.read(100), .1, atol=1e-6)
-                for second in (.1, 2.1, 59.8, 60.9):
+                for second in (.1, 1.9, 2.1, 59.8, 60.9):
                     audio.seek(round(second * 44100))
                     np.testing.assert_allclose(audio.read(100), .1, atol=1e-6)
-                for second in (.25, 1.9, 59.99, 60.02, 60.7):
+                for second in (.25, 1.7, 59.99, 60.02, 60.7):
                     audio.seek(round(second * 44100))
                     self.assertGreater(float(audio.read(100).mean()), .15)
             report = json.loads((project / 'report.json').read_text())

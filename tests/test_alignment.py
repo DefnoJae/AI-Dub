@@ -5,17 +5,28 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import numpy as np
-from studio.alignment import conversational, spoken_text, translate_windows, trim_silence, fit_aligned
+from studio.alignment import acoustic_sentence_end, conversational, spoken_text, translate_windows, trim_silence, fit_aligned
 
 
 class AlignmentTests(unittest.TestCase):
+    def test_ending_keeps_release_but_excludes_later_artifact(self):
+        rate=24000
+        samples=np.zeros(3*rate,dtype=np.float32)
+        samples[:rate]=np.sin(np.arange(rate)*.1)*.2
+        samples[rate:round(1.2*rate)]=np.sin(np.arange(round(.2*rate))*.1)*np.linspace(.2,0,round(.2*rate))
+        samples[round(2.2*rate):round(2.4*rate)]=.1
+        kept=acoustic_sentence_end(samples,rate,.95)
+        self.assertGreater(len(kept)/rate,1.2)
+        self.assertLess(len(kept)/rate,1.4)
+        np.testing.assert_array_equal(kept[:round(1.2*rate)],samples[:round(1.2*rate)])
+
     def test_generated_silence_does_not_delay_the_voice(self):
         rate = 24000
         voice = np.sin(np.arange(rate) * .1).astype('float32') * .2
         audio = np.concatenate([np.zeros(rate // 2), voice, np.zeros(rate // 4)])
         trimmed, removed = trim_silence(audio, rate)
-        self.assertAlmostEqual(removed, .49, places=2)
-        self.assertLessEqual(len(trimmed) / rate, 1.03)
+        self.assertAlmostEqual(removed, .48, places=2)
+        self.assertLessEqual(len(trimmed) / rate, 1.16)
         with self.assertRaises(ValueError):
             trim_silence(np.zeros(rate), rate)
 
@@ -49,13 +60,15 @@ class AlignmentTests(unittest.TestCase):
                     fit_aligned(tone, rate, duration, imageio_ffmpeg.get_ffmpeg_exe(), work)
             short = fit_aligned(tone, rate, 4, imageio_ffmpeg.get_ffmpeg_exe(), work)
             self.assertGreater(short['paddingSeconds'],2)
-            self.assertEqual(short['speed'],.75)
+            self.assertEqual(short['speed'],1.0)
             paused = fit_aligned(tone,rate,2,imageio_ffmpeg.get_ffmpeg_exe(),work,
                                  pauses=[(.5,1.2)],word_boundaries=[.5])
-            self.assertEqual(paused['paddingPlacement'],'between words at source hesitation')
+            self.assertEqual(paused['paddingPlacement'],'tail')
+            self.assertEqual(paused['insertedInternalSilenceSeconds'],0)
             audio,_=sf.read(work/'fitted.wav')
             self.assertEqual(len(audio),88200)
-            self.assertGreater(float(np.max(np.abs(audio[-4000:-1000]))),.1)
+            self.assertGreater(float(np.max(np.abs(audio[22050:33075]))),.1)
+            self.assertLess(float(np.max(np.abs(audio[-4000:-1000]))),.001)
 
     def test_natural_text_keeps_translation_available(self):
         self.assertEqual(conversational('I do not know. You are here.'), "I don't know. You're here.")

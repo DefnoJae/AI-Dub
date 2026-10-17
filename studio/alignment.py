@@ -3,6 +3,7 @@ import re
 import subprocess
 
 ALIGNMENT_VERSION = 3
+FIT_VERSION = 8
 
 
 def spoken_text(line):
@@ -92,24 +93,39 @@ def trim_silence(samples, rate):
     if rms.max() < .001:
         raise ValueError('Generated speech is silent')
     active = np.flatnonzero(rms > max(.001, float(rms.max()) * .025))
-    # Keep one 10ms guard frame so consonants are not shaved at the boundary.
-    a, b = max(0, int(active[0] - 1) * hop), min(len(samples), int(active[-1] + 2) * hop)
+    # Recognition timestamps are not edit points. Keep acoustic release/breath
+    # tails and a small onset guard instead of shaving consonants to word times.
+    a, b = max(0, int(active[0] - 2) * hop), min(len(samples), int(active[-1] + 13) * hop)
     return samples[a:b], a / rate
+
+
+def acoustic_sentence_end(samples,rate,recognized_end):
+    """Find a quiet release after the sentence; never cut at a word timestamp."""
+    import numpy as np
+    hop=max(1,round(rate*.01))
+    padded=np.pad(samples,(0,(-len(samples))%hop))
+    rms=np.sqrt(np.mean(padded.reshape(-1,hop)**2,axis=1))
+    quiet=rms<max(.001,float(rms.max())*.025)
+    begin=max(0,min(len(rms),int(np.ceil(recognized_end*rate/hop))))
+    for index in range(begin,len(rms)-7):
+        if quiet[index:index+8].all():
+            # Retain 80ms of actual quiet after the audible release, excluding
+            # any unrecognized artifact that starts after that settled ending.
+            return samples[:min(len(samples),(index+8)*hop)]
+    return samples
 
 
 def fit_aligned(samples, rate, seconds, ffmpeg, work, pauses=None, word_boundaries=None):
     import numpy as np
     import soundfile as sf
     trimmed, removed = trim_silence(samples, rate)
-    pause_total = sum(b-a for a,b in (pauses or []))
-    active_target = max(.1,seconds-pause_total)
-    required_speed = len(trimmed) / rate / active_target
+    required_speed = len(trimmed) / rate / seconds
     if required_speed > 1.35:
         raise ValueError(f'Timing needs {required_speed:.3f}x speech speed; shorten dubText to fit '
                          f'the {seconds:.2f}s source speech window naturally. Original timing is preserved.')
     # A short natural phrase does not need invented words or extreme slow motion.
     # Preserve its pace and keep the remainder of the source window silent.
-    speed = max(.75,required_speed)
+    speed = max(1.0,required_speed)
     sf.write(work / 'trimmed.wav', trimmed, rate, subtype='PCM_16')
     target = work / 'fitted.wav'
     subprocess.run([ffmpeg, '-y', '-nostdin', '-v', 'error', '-i', str(work / 'trimmed.wav'),
@@ -121,34 +137,12 @@ def fit_aligned(samples, rate, seconds, ffmpeg, work, pauses=None, word_boundari
     # Correct small atempo edge rounding, with a 5ms end fade to avoid a cut click.
     speech_duration = min(len(fitted),expected)/output_rate
     padding = max(0,expected-len(fitted))/output_rate
-    inserted_pauses = False
-    # Reinsert a source hesitation between generated words, rather than padding
-    # the entire spare interval after speech has already finished.
-    if pauses and word_boundaries and padding > .02:
-        boundaries = [max(0,min(len(fitted),round((time-removed)/speed*output_rate)))
-                      for time in word_boundaries]
-        boundaries = sorted(set(i for i in boundaries if .1*output_rate<i<len(fitted)-.1*output_rate))
-        if boundaries:
-            chosen = {}
-            for a,b in pauses:
-                wanted = len(fitted)*max(0,min(1,a/seconds))
-                position = min(boundaries,key=lambda value:abs(value-wanted))
-                chosen[position] = chosen.get(position,0)+(b-a)
-            total = sum(chosen.values())
-            pieces,cursor,used = [],0,0
-            items=sorted(chosen.items())
-            for number,(position,length) in enumerate(items):
-                count = round(padding*output_rate*length/total) if number<len(items)-1 else round(padding*output_rate)-used
-                pieces.extend([fitted[cursor:position],np.zeros(count,dtype=np.float32)])
-                used+=count
-                cursor=position
-            pieces.append(fitted[cursor:])
-            fitted=np.concatenate(pieces)
-            inserted_pauses=True
+    # Keep the generated phrase continuous. Japanese pauses and English word
+    # timestamps cannot justify slicing a voiced English waveform.
     fitted = np.pad(fitted[:expected], (0, max(0, expected-len(fitted))))
     fade = min(round(.005 * output_rate), len(fitted))
     fitted[-fade:] *= np.linspace(1, 0, fade)
     sf.write(target, fitted, output_rate, subtype='PCM_16')
-    return dict(speed=speed, trimmedLeadingSeconds=removed, allocatedDuration=seconds,
+    return dict(fitVersion=FIT_VERSION,speed=speed, trimmedLeadingSeconds=removed, allocatedDuration=seconds,
                 renderedDuration=len(fitted) / output_rate,speechDuration=speech_duration,paddingSeconds=padding,
-                paddingPlacement='between words at source hesitation' if inserted_pauses else 'tail')
+                paddingPlacement='tail',insertedInternalSilenceSeconds=0)

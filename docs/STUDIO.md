@@ -48,7 +48,11 @@ new actors with only a short line, overlapping voices and exaggerated performanc
 
 Automatic mode tries up to three seeded reference-conditioned takes. Failed candidates
 are recorded, so Resume does not repeat the identical failed delivery. Generated English
-is transcribed to check word agreement and remove unwanted tails.
+is transcribed to check word agreement. Recognition timestamps are never used as
+waveform cut points; acoustic trimming retains a release/breath guard after speech.
+After the recognized sentence, an 80ms quiet interval can identify its natural ending
+and exclude a later stray generation artifact. Audible endings are not cut at an
+estimated word boundary.
 
 If reference delivery still fails, Automatic switches EVERY line for that speaker to
 one consistent Kokoro voice, including previously generated lines. The substitution
@@ -58,11 +62,12 @@ retakes without substituting another engine.
 
 Natural generation adjusts its native pace before a small pitch-preserving FFmpeg
 fit. A short take is no longer rejected for leaving silence in a longer window.
-When source pauses and generated word boundaries are available, spare time is inserted
-between words at a source hesitation instead of putting all silence after speech.
-Otherwise spare time stays at the tail: audible speech may then finish before the
-window ends, and the report records that. No phoneme, syllable or mouth-shape matching
-is claimed. Never widen a line into another character's turn to force a render.
+Phrases stay continuous. The app does not insert Japanese pauses inside English words
+or slow a short phrase merely to fill a window. Spare time stays after the natural
+speech ending: audible English may finish before the Japanese window ends, and the
+report records that. This prioritizes intact phrasing over forced duration matching.
+No phoneme, syllable or mouth-shape matching is claimed. Never widen a line into
+another character's turn to force a render.
 
 Speech-recognition verification is a quality check, not proof of every spoken word.
 Fallback voice style is generic. Acting, emotion, identity and overlaps need review.
@@ -91,7 +96,7 @@ Options: --analyze, --reanalyze, --seconds 30, --voice-mode automatic|reference|
 ## Verification and limits
 
 Tests cover source timing independent of English translation timestamps, short speaker
-identity, silence trimming, pause insertion, failed-candidate retry/cache recovery,
+identity, safe ending preservation, no artificial internal gaps, failed-candidate retry/cache recovery,
 whole-speaker fallback consistency, generated-word checks, source/settings rejection,
 two-chunk mixing, interrupted-export resume, edited-line invalidation and single-track
 duration-correct exports. Model doubles test deterministic logic, not translation quality.

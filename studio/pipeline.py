@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from studio.alignment import ALIGNMENT_VERSION, spoken_text, translate_windows
+import uuid
+from studio.alignment import ALIGNMENT_VERSION, FIT_VERSION, spoken_text, translate_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'companion'))
@@ -51,7 +52,15 @@ def project_lock(folder):
 def media(ffmpeg, args, target):
     temp = target.with_name(target.stem + '.partial' + target.suffix)
     subprocess.run([ffmpeg, '-y', '-nostdin', '-v', 'error', *map(str, args), str(temp)], check=True)
-    temp.replace(target)
+    try:
+        temp.replace(target)
+    except PermissionError:
+        if target.name != 'AI-Dub-English.mp4' or not target.exists():
+            raise
+        target=target.with_name(target.stem+'-'+uuid.uuid4().hex[:8]+target.suffix)
+        temp.replace(target)
+        print('Previous preview is open. Saved this render under a new filename.',flush=True)
+    return target
 
 
 def cluster(embeddings, threshold=.28, durations=None):
@@ -290,12 +299,15 @@ def run(args):
         temp_mix.replace(mix)
         print('Exporting English-only video', flush=True)
         result = folder / 'AI-Dub-English.mp4'
-        media(ffmpeg, ['-i', source, '-i', mix, '-map', '0:v:0', '-map', '1:a:0', '-t', duration,
+        published = media(ffmpeg, ['-i', source, '-i', mix, '-map', '0:v:0', '-map', '1:a:0', '-t', duration,
               '-c:v', 'libx264', '-preset', 'fast', '-crf', 18, '-pix_fmt', 'yuv420p', '-c:a', 'aac',
               '-af', f'volume={.98 / peak}', '-metadata:s:a:0', 'language=eng', '-movflags', '+faststart'], result)
+        result=published or result
         save(folder / 'report.json', dict(status='generated-unreviewed', duration=duration,
              speakers=len(script['speakers']), lines=len(takes), scriptHash=digest(script), originalAudioMixed=False,
              alignmentVersion=ALIGNMENT_VERSION,
+             fitVersion=FIT_VERSION,
+             outputFile=result.name,
              voicePlan=voice_plan,
              renderVersion=RENDER_VERSION,
              timing=[dict(text=spoken_text(line),

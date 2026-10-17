@@ -298,14 +298,22 @@ class Studio:
         path = self.active() / 'AI-Dub-English.mp4'
         report = self.active() / 'report.json'
         from studio.pipeline import digest
-        from studio.alignment import ALIGNMENT_VERSION
+        from studio.alignment import ALIGNMENT_VERSION, FIT_VERSION
         from studio.rendering import RENDER_VERSION
         script = self.active() / 'script.json'
-        if not path.exists() or not report.exists() or not script.exists():
+        if not report.exists() or not script.exists():
             messagebox.showinfo('Render first', 'No completed video in this project yet.')
             return None
         result_report = json.loads(report.read_text(encoding='utf8'))
-        if result_report.get('renderVersion') != RENDER_VERSION or result_report.get('alignmentVersion') != ALIGNMENT_VERSION or result_report.get('scriptHash') != digest(json.loads(script.read_text(encoding='utf8'))):
+        filename=result_report.get('outputFile','AI-Dub-English.mp4')
+        if not isinstance(filename,str) or Path(filename).name!=filename:
+            messagebox.showerror('Invalid result','The report contains an invalid video filename.')
+            return None
+        path=self.active()/filename
+        if not path.is_file():
+            messagebox.showinfo('Render first','The completed video file is missing. Render / Resume again.')
+            return None
+        if result_report.get('fitVersion') != FIT_VERSION or result_report.get('renderVersion') != RENDER_VERSION or result_report.get('alignmentVersion') != ALIGNMENT_VERSION or result_report.get('scriptHash') != digest(json.loads(script.read_text(encoding='utf8'))):
             messagebox.showinfo('Render changes', 'The script changed. Render / Resume to update the video first.')
             return None
         return path

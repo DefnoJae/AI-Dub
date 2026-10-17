@@ -18,7 +18,7 @@ class SpeakerTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('soundfile') and importlib.util.find_spec('torch'), 'quality runtime needed')
 class RecoveryTests(unittest.TestCase):
-    def test_verification_removes_long_tail_and_rejects_wrong_words(self):
+    def test_verification_preserves_acoustic_tail_and_rejects_wrong_words(self):
         import numpy as np
         import soundfile as sf
         import torch
@@ -26,16 +26,20 @@ class RecoveryTests(unittest.TestCase):
         class Voice:
             sr=24000
             def generate(self,*args,**kwargs):
-                return torch.tensor(np.sin(np.arange(72000)*.1)*.2).float()[None,:]
+                signal=np.sin(np.arange(28800)*.1)*.2
+                signal[24000:]*=np.linspace(1,0,4800)
+                return torch.tensor(np.pad(signal,(0,43200))).float()[None,:]
         with tempfile.TemporaryDirectory() as temp:
             folder=Path(temp)
             ref=folder/'ref.wav'
             sf.write(ref,np.ones(24000)*.1,24000)
-            line=dict(start=0,end=1,text='Test.',speaker='a')
+            line=dict(start=0,end=1.5,text='Test.',speaker='a')
             good=lambda path:('Test.',[SimpleNamespace(start=0,end=.97)])
             result=rendering.render_take(line,0,'reference','af_heart',(ref,'hash'),folder,folder,
                 imageio_ffmpeg.get_ffmpeg_exe(),lambda:Voice(),save,digest,good)
-            self.assertEqual(sf.info(result).frames,44100)
+            self.assertEqual(sf.info(result).frames,66150)
+            fitted,rate=sf.read(result)
+            self.assertGreater(float(np.max(np.abs(fitted[round(1.05*rate):round(1.1*rate)]))),.05)
             marker=json.loads(result.parents[1].joinpath('complete.json').read_text())
             self.assertTrue(marker['wordsVerified'])
             bad=lambda path:('Wrong words',[SimpleNamespace(start=0,end=.97)])

@@ -7,7 +7,7 @@ import sys
 import re
 from difflib import SequenceMatcher
 
-from studio.alignment import fit_aligned, spoken_text
+from studio.alignment import FIT_VERSION, acoustic_sentence_end, fit_aligned, spoken_text
 
 RENDER_VERSION = 5
 NATURAL_VOICES = ('af_heart', 'am_michael', 'bf_emma', 'bm_george', 'af_bella', 'am_adam')
@@ -25,7 +25,7 @@ def render_take(line, index, mode, voice, reference, folder, root, ffmpeg, model
     work = folder / ('take-' + key)
     work.mkdir(exist_ok=True)
     complete = work / 'complete.json'
-    fit_signature=digest(dict(words=line.get('sourceWords',[]),speech=line.get('sourceSpeech',[]),fitVersion=6))
+    fit_signature=digest(dict(words=line.get('sourceWords',[]),speech=line.get('sourceSpeech',[]),fitVersion=FIT_VERSION))
     if complete.exists() and json.loads(complete.read_text(encoding='utf8')).get('fitSignature')==fit_signature:
         return work / 'fit/fitted.wav'
     failures = []
@@ -65,14 +65,15 @@ def render_take(line, index, mode, voice, reference, folder, root, ffmpeg, model
                 recognized, words = verifier(raw)
                 tokenize = lambda text: re.findall(r"[a-z]+(?:'[a-z]+)?",text.lower())
                 expected, actual = tokenize(spoken_text(line)), tokenize(recognized)
-                if not words or SequenceMatcher(None,expected,actual).ratio()<.65:
+                matcher=SequenceMatcher(None,expected,actual)
+                coverage=sum(block.size for block in matcher.get_matching_blocks())/max(1,len(expected))
+                if not words or matcher.ratio()<.8 or coverage<.9:
                     raise ValueError('Generated words did not match the dialogue; automatic retake required')
                 if any(token in expected and token not in actual for token in ["not","never","don't","can't","won't"]):
                     raise ValueError('Generated take may have lost a negation')
-                a=max(0,words[0].start-.03)
-                b=min(len(samples)/rate,words[-1].end+.03)
-                samples=samples[round(a*rate):round(b*rate)]
-                boundaries=[max(0,(left.end+right.start)/2-a) for left,right in zip(words,words[1:])]
+                # Word timestamps verify content only. They can end before the
+                # final consonant/reverb and must never crop the waveform.
+                samples=acoustic_sentence_end(samples,rate,words[-1].end)
                 verified=True
             fit = work / 'fit'
             fit.mkdir(exist_ok=True)
