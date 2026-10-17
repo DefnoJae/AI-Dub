@@ -140,3 +140,19 @@ test('Denshi probe handles unavailable built-in player API', () => {
   ui.events['ai-dub-denshi-probe']();
   assert.match(ui.states[5].get(), /not exposed/);
 });
+
+test('redesigned tray actions are wired and never pretend unsupported dubbing works', async () => {
+  const ui = load();
+  for (const name of ['ai-dub-load-track', 'ai-dub-prepare-episode',
+    'ai-dub-refresh-status', 'ai-dub-open-output']) {
+    assert.equal(typeof ui.events[name], 'function', name);
+  }
+  ui.events['ai-dub-load-track']();
+  assert.match(ui.states[6].get(), /no verified external-audio insertion API/);
+  ui.events['ai-dub-prepare-episode']();
+  assert.match(ui.states[7].get(), /not available/);
+  await ui.events['ai-dub-refresh-status']();
+  assert.match(ui.states[7].get(), /No quality clip job/);
+  ui.events['ai-dub-open-output']();
+  assert.match(ui.states[7].get(), /no completed quality clip/);
+});
