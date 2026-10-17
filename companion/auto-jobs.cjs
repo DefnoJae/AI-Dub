@@ -10,7 +10,8 @@ const { spawn } = require('node:child_process');
 const FILE_RE = /^([a-zA-Z0-9_-]{1,64})\.(mp4|mkv|webm|mov)$/i;
 const CLIP_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
-function createAutoJobs({ root, dataDir, python, model, voice, launch = spawn }) {
+function createAutoJobs({ root, dataDir, python, model, voice, tts = 'piper',
+                          kokoroModel = '', kokoroVoices = '', kokoroVoice = 'af_heart', launch = spawn }) {
   if (!root || !dataDir || !python || !model || !voice) throw new Error('root, dataDir, python, model and voice are required');
   const inbox = path.resolve(dataDir, 'inbox');
   const jobsDir = path.resolve(dataDir, 'auto-jobs');
@@ -99,7 +100,10 @@ function createAutoJobs({ root, dataDir, python, model, voice, launch = spawn })
           message: 'Offline transcription, translation and synthesis in progress.' };
         const args = [path.join(root, 'companion', 'dub_clip.py'), source,
           '--start', String(start), '--seconds', String(seconds), '--output', output,
-          '--model', path.resolve(model), '--voice', path.resolve(voice)];
+          '--model', path.resolve(model), '--voice', path.resolve(voice),
+          '--tts', tts];
+        if (tts === 'kokoro') args.push('--kokoro-model', path.resolve(kokoroModel),
+          '--kokoro-voices', path.resolve(kokoroVoices), '--kokoro-voice', kokoroVoice);
         const child = launch(python, args, {
           cwd: root, shell: false, windowsHide: true,
           env: { ...process.env, HF_HUB_OFFLINE: '1' },
