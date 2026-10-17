@@ -2,7 +2,7 @@
 
 Local-first AI dubbing companion for Seanime, with optional opt-in cloud acceleration.
 
-> **Status: settings/status companion plus an experimental offline clip processor.** Seanime audio replacement is not implemented. The separate Python CLI implements local recognition, speech translation and synthesis, but a complete Japanese-to-English source test has not yet been demonstrated.
+> **Status: settings/status companion plus an experimental offline clip processor.** A short Japanese-to-English processing test completed using a Miruro source resolved by Seanime. Its translation and voice quality remain unreviewed. Seanime audio replacement is not implemented.
 
 ## Installation
 
