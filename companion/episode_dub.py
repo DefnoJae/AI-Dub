@@ -104,13 +104,15 @@ def package_episode(local, pcm, rate, result, ffmpeg):
     command([ffmpeg, "-nostdin", "-loglevel", "error", "-y",
              "-i", str(local), "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", str(pcm),
              "-filter_complex", filter_complex,
-             "-map", "0:v:0", "-map", "0:a:0", "-map", "[dub]",
+             "-map", "0:v:0", "-map", "[dub]", "-map", "0:a:0",
              "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-             "-metadata:s:a:0", "language=jpn",
-             "-metadata:s:a:0", "title=Japanese (Original)",
-             "-metadata:s:a:1", "language=eng",
-             "-metadata:s:a:1", "title=English - AI Dub",
-             "-disposition:a:0", "0", "-disposition:a:1", "default",
+             # English first: Chromium-backed web players often play the first
+             # audio stream and may not expose the multi-audio selection menu.
+             "-metadata:s:a:0", "language=eng",
+             "-metadata:s:a:0", "title=English - AI Dub",
+             "-metadata:s:a:1", "language=jpn",
+             "-metadata:s:a:1", "title=Japanese (Original)",
+             "-disposition:a:0", "default", "-disposition:a:1", "0",
              "-movflags", "+faststart", str(result)], "Creating playable episode")
 
 
@@ -166,7 +168,7 @@ def run(args):
         "elapsedSeconds": round(time.monotonic() - start, 1),
         "sourceLanguage": info.language, "languageProbability": info.language_probability,
         "engine": "Whisper translation + " + args.tts + " English voice", "cloudUsed": False,
-        "englishSegments": timeline, "audioTracks": ["Japanese original", "English AI Dub"],
+        "englishSegments": timeline, "audioTracks": ["English AI Dub (default)", "Japanese original"],
         "dubTrackDefault": True,
         "warnings": [
             "Translation and voices are unreviewed and may be inaccurate or unnatural",
