@@ -170,13 +170,19 @@ function createEpisodeJobs({ root, dataDir, python, model, voice, tts = 'piper',
     const range = req.headers.range;
     let start = 0, end = size - 1, status = 200;
     if (range !== undefined) {
-      const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-      if (!match) {
+      const normal = /^bytes=(\d+)-(\d*)$/.exec(range);
+      const suffix = /^bytes=-(\d+)$/.exec(range);
+      if (!normal && !suffix) {
         res.writeHead(416, { 'Content-Range': 'bytes */' + size });
         res.end(); return true;
       }
-      start = Number(match[1]);
-      end = match[2] ? Number(match[2]) : end;
+      if (normal) {
+        start = Number(normal[1]);
+        end = normal[2] ? Number(normal[2]) : end;
+      } else {
+        const requested = Number(suffix[1]);
+        start = requested > 0 ? Math.max(0, size - requested) : size;
+      }
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
         res.writeHead(416, { 'Content-Range': 'bytes */' + size });
         res.end(); return true;
