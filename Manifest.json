@@ -1,7 +1,7 @@
 {
   "id": "ai-dub",
   "name": "AI Dub",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "manifestURI": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/Manifest.json",
   "language": "javascript",
   "type": "plugin",
@@ -10,7 +10,7 @@
   "icon": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg",
   "website": "https://github.com/DefnoJae/AI-Dub",
   "readme": "https://github.com/DefnoJae/AI-Dub#readme",
-  "notes": "Improves the Denshi playback API diagnostic alongside opt-in local quality clip experiments. External audio insertion and automatic dubbing remain unavailable. Uses the existing storage and loopback permissions.",
+  "notes": "Redesigned compact tray with session controls, companion settings, Denshi diagnostics, episode tools and quality clip experiments. External audio insertion and automatic dubbing remain unavailable. Uses the existing storage and loopback permissions.",
   "lang": "multi",
   "payloadURI": "https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/code.js",
   "plugin": {
