@@ -81,6 +81,7 @@ class TestEpisodeVoice(unittest.TestCase):
             source = Path(tmp, "source.mkv")
             source.write_bytes(b"video")
             self.assertEqual(validate_source(str(source)), str(source.resolve()))
+            Path(tmp, "not-video.txt").write_text("not video", encoding="utf-8")
             with self.assertRaises(ValueError):
                 validate_source(str(Path(tmp, "not-video.txt")))
             with self.assertRaises(ValueError):
