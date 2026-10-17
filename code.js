@@ -22,6 +22,8 @@ function init() {
     var qualityJob = ctx.state(null);
     var qualityMessage = ctx.state('Quality clip experiments use prepared local inbox files.');
     var revision = 0;
+    var denshiStatus = ctx.state('Denshi not inspected.');
+    var denshiInfo = ctx.state('');
     var tray = ctx.newTray({
       iconUrl: 'https://raw.githubusercontent.com/DefnoJae/AI-Dub/main/icon.svg',
       withContent: true, width: '380px'
@@ -147,6 +149,25 @@ function init() {
           job.status === 'failed' ? 'Processing failed. Inspect the local job log.' : 'Still processing on this computer.');
       } catch (_) { qualityMessage.set('Could not refresh the result. Check the companion connection.'); }
     });
+    ctx.registerEventHandler('ai-dub-denshi-probe', function () {
+      try {
+        var core = ctx.videoCore;
+        if (!core || typeof core.getPlaybackStatus !== 'function') {
+          denshiStatus.set('Denshi VideoCore API unavailable in this Seanime version.');
+          denshiInfo.set('');
+          return;
+        }
+        var playback = core.getPlaybackStatus();
+        var info = typeof core.getCurrentPlaybackInfo === 'function' ? core.getCurrentPlaybackInfo() : null;
+        // No audio mutation: this checks the active built-in player only.
+        denshiStatus.set(playback ? 'Denshi playback API detected.' : 'Denshi API detected; no active playback status.');
+        denshiInfo.set('External audio insertion is not exposed by the public VideoCore API. ' +
+          (info ? 'Current playback information available.' : 'Start an episode to test playback detection.'));
+      } catch (_) {
+        denshiStatus.set('Could not inspect Denshi. Check your Seanime version.');
+        denshiInfo.set('');
+      }
+    });
     tray.render(function () {
       return tray.stack([
         tray.text('AI Dub — local companion'),
@@ -159,7 +180,11 @@ function init() {
         tray.button({ label: 'Save settings', onClick: 'ai-dub-save' }),
         tray.button({ label: 'Check saved connection', onClick: 'ai-dub-check', disabled: busy.get() }),
         tray.button({ label: 'Forget token / disable checks', onClick: 'ai-dub-forget' }),
-        tray.text('Player integration has not been verified in Seanime.'),
+        tray.text('Denshi built-in player'),
+        tray.text(denshiStatus.get()),
+        tray.text(denshiInfo.get()),
+        tray.button({ label: 'Detect Denshi playback', onClick: 'ai-dub-denshi-probe' }),
+        tray.text('Native AI audio track loading is not supported by the published Denshi plugin API.'),
         tray.text('Local quality clip experiments'),
         tray.text(qualityMessage.get()),
         tray.button({ label: 'Load prepared clips', onClick: 'ai-dub-clips' }),
