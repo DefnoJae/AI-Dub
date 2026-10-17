@@ -79,6 +79,10 @@ function createAutoJobs({ root, dataDir, python, model, voice, launch = spawn })
     });
     req.on('end', () => {
       if (oversized) return;
+      // Another POST can be received while this request body is streaming.
+      // Re-check at commit time to enforce a single offline worker.
+      if (active !== null) return send(409, { error: 'An automatic clip job is already running' });
+      if (jobs.size >= 100) return send(429, { error: 'Job limit reached' });
       try {
         const params = JSON.parse(body);
         if (!params || typeof params !== 'object') throw new Error('Invalid request');
